@@ -37,13 +37,9 @@ const siteStatSchema = new Schema<ISiteStat>(
   }
 );
 
-siteStatSchema.index({ key: 1 });
-
 const SiteStat: Model<ISiteStat> = mongoose.model<ISiteStat>(
   'SiteStat',
   siteStatSchema
 );
 
 export default SiteStat;
-
-
