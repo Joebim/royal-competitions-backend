@@ -14,6 +14,7 @@ process.on('uncaughtException', (error: Error) => {
 
 
 
+
 // Connect to database
 connectDatabase();
 
