@@ -1,0 +1,118 @@
+import dotenv from 'dotenv';
+import path from 'path';
+
+dotenv.config({ path: path.join(__dirname, '../../.env') });
+
+interface Config {
+  nodeEnv: string;
+  port: number;
+  apiVersion: string;
+  mongoUri: string;
+  frontendUrl: string;
+  allowedOrigins: string[];
+  jwt: {
+    secret: string;
+    expire: string;
+    refreshSecret: string;
+    refreshExpire: string;
+  };
+  stripe: {
+    secretKey: string;
+    publishableKey: string;
+    webhookSecret: string;
+  };
+  cloudinary: {
+    cloudName: string;
+    apiKey: string;
+    apiSecret: string;
+    folder: string;
+  };
+  mailchimp: {
+    apiKey: string;
+    serverPrefix: string;
+    audienceId: string;
+  };
+  email: {
+    service: string;
+    host: string;
+    port: number;
+    user: string;
+    password: string;
+    from: string;
+    fromName: string;
+  };
+  rateLimit: {
+    windowMs: number;
+    maxRequests: number;
+  };
+  upload: {
+    maxFileSize: number;
+    allowedTypes: string[];
+  };
+  cookies: {
+    secure: boolean;
+    httpOnly: boolean;
+    sameSite: 'strict' | 'lax' | 'none';
+    maxAge: number;
+  };
+}
+
+export const config: Config = {
+  nodeEnv: process.env.NODE_ENV || 'development',
+  port: parseInt(process.env.PORT || '5000', 10),
+  apiVersion: process.env.API_VERSION || 'v1',
+  mongoUri:
+    process.env.MONGODB_URI || 'mongodb://localhost:27017/royal-competitions',
+  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
+  allowedOrigins: process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',')
+    : ['http://localhost:3000', 'http://localhost:5173'],
+  jwt: {
+    secret: process.env.JWT_SECRET || 'your_jwt_secret',
+    expire: process.env.JWT_EXPIRE || '7d',
+    refreshSecret: process.env.JWT_REFRESH_SECRET || 'your_refresh_secret',
+    refreshExpire: process.env.JWT_REFRESH_EXPIRE || '30d',
+  },
+  stripe: {
+    secretKey: process.env.STRIPE_SECRET_KEY || '',
+    publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || '',
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+  },
+  cloudinary: {
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
+    apiKey: process.env.CLOUDINARY_API_KEY || '',
+    apiSecret: process.env.CLOUDINARY_API_SECRET || '',
+    folder: process.env.CLOUDINARY_FOLDER || 'royal-competitions',
+  },
+  mailchimp: {
+    apiKey: process.env.MAILCHIMP_API_KEY || '',
+    serverPrefix: process.env.MAILCHIMP_SERVER_PREFIX || 'us1',
+    audienceId: process.env.MAILCHIMP_AUDIENCE_ID || '',
+  },
+  email: {
+    service: process.env.EMAIL_SERVICE || 'gmail',
+    host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+    port: parseInt(process.env.EMAIL_PORT || '587', 10),
+    user: process.env.EMAIL_USER || '',
+    password: process.env.EMAIL_PASSWORD || '',
+    from: process.env.EMAIL_FROM || 'noreply@royalcompetitions.co.uk',
+    fromName: process.env.EMAIL_FROM_NAME || 'Royal Competitions',
+  },
+  rateLimit: {
+    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10),
+    maxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
+  },
+  upload: {
+    maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '5242880', 10),
+    allowedTypes: (
+      process.env.ALLOWED_FILE_TYPES || 'image/jpeg,image/png,image/webp'
+    ).split(','),
+  },
+  cookies: {
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    sameSite:
+      (process.env.COOKIE_SAME_SITE as 'strict' | 'lax' | 'none') || 'lax',
+    maxAge: parseInt(process.env.COOKIE_MAX_AGE || '604800000', 10), // 7 days in milliseconds
+  },
+};
