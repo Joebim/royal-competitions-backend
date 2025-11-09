@@ -42,4 +42,5 @@ const SiteStat: Model<ISiteStat> = mongoose.model<ISiteStat>(
   siteStatSchema
 );
 
+
 export default SiteStat;
