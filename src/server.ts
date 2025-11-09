@@ -12,7 +12,6 @@ process.on('uncaughtException', (error: Error) => {
   process.exit(1);
 });
 
-
 // Connect to database
 connectDatabase();
 
