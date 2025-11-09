@@ -17,24 +17,26 @@ const app: Application = express();
 
 // Security middleware
 app.use(helmet());
-app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    if (config.allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    
-    // In development, allow any localhost origin
-    if (config.nodeEnv === 'development' && origin.includes('localhost')) {
-      return callback(null, true);
-    }
-    
-    return callback(new Error('Not allowed by CORS'), false);
-  },
-  credentials: true,
-}));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+
+      if (config.allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // In development, allow any localhost origin
+      if (config.nodeEnv === 'development' && origin.includes('localhost')) {
+        return callback(null, true);
+      }
+
+      return callback(new Error('Not allowed by CORS'), false);
+    },
+    credentials: true,
+  })
+);
 app.use(mongoSanitize());
 app.use(cookieParser());
 
@@ -46,9 +48,11 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 if (config.nodeEnv === 'development') {
   app.use(morgan('dev'));
 } else {
-  app.use(morgan('combined', {
-    stream: { write: (message) => logger.info(message.trim()) },
-  }));
+  app.use(
+    morgan('combined', {
+      stream: { write: (message) => logger.info(message.trim()) },
+    })
+  );
 }
 
 // Rate limiting
@@ -64,10 +68,14 @@ app.get('/health', (_req: Request, res: Response) => {
 });
 
 // Swagger documentation
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-  customCss: '.swagger-ui .topbar { display: none }',
-  customSiteTitle: 'Royal Competitions API Documentation',
-}));
+app.use(
+  '/api-docs',
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec, {
+    customCss: '.swagger-ui .topbar { display: none }',
+    customSiteTitle: 'Royal Competitions API Documentation',
+  })
+);
 
 // Base route
 app.get('/', (_req: Request, res: Response) => {
@@ -91,4 +99,3 @@ app.all('*', (req: Request, _res: Response, next: NextFunction) => {
 app.use(errorHandler);
 
 export default app;
-
