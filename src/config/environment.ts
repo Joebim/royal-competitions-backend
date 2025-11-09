@@ -63,10 +63,16 @@ export const config: Config = {
   apiVersion: process.env.API_VERSION || 'v1',
   mongoUri:
     process.env.MONGODB_URI || 'mongodb://localhost:27017/royal-competitions',
-  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
+  frontendUrl:
+    process.env.FRONTEND_URL || 'https://www.royalcompetitions.co.uk',
   allowedOrigins: process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',')
-    : ['http://localhost:3000', 'http://localhost:5173'],
+    : [
+        'http://localhost:3000',
+        'http://localhost:5173',
+        'https://www.royalcompetitions.co.uk',
+        'https://royalcompetitions.co.uk',
+      ],
   jwt: {
     secret: process.env.JWT_SECRET || 'your_jwt_secret',
     expire: process.env.JWT_EXPIRE || '7d',

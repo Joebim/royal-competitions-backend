@@ -69,6 +69,16 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
   customSiteTitle: 'Royal Competitions API Documentation',
 }));
 
+// Base route
+app.get('/', (_req: Request, res: Response) => {
+  res.status(200).json({
+    success: true,
+    message: 'Royal Competitions API',
+    version: 'v1',
+    docs: '/api-docs',
+  });
+});
+
 // API routes
 app.use('/api/v1', routes);
 
