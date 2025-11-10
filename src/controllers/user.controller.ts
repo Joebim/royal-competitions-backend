@@ -60,6 +60,16 @@ export const getMyEntries = async (
   }
 };
 
+const sanitizeUser = (user: any) => {
+  if (!user) {
+    return user;
+  }
+
+  const plainUser = typeof user.toObject === 'function' ? user.toObject() : user;
+  const { password, __v, ...rest } = plainUser;
+  return rest;
+};
+
 export const getUsers = async (
   req: Request,
   res: Response,
@@ -129,21 +139,33 @@ export const updateUser = async (
   next: NextFunction
 ) => {
   try {
+    const allowedFields = [
+      'firstName',
+      'lastName',
+      'email',
+      'phone',
+      'role',
+      'isVerified',
+      'isActive',
+      'subscribedToNewsletter',
+    ] as const;
+
     const updates: Record<string, any> = {};
 
-    if (req.body.role) {
-      if (!Object.values(UserRole).includes(req.body.role)) {
+    allowedFields.forEach((field) => {
+      if (req.body[field] !== undefined) {
+        updates[field] = req.body[field];
+      }
+    });
+
+    if (updates.role) {
+      if (!Object.values(UserRole).includes(updates.role)) {
         throw new ApiError('Invalid role supplied', 422);
       }
-      updates.role = req.body.role;
     }
 
-    if (req.body.isActive !== undefined) {
-      updates.isActive = req.body.isActive;
-    }
-
-    if (req.body.subscribedToNewsletter !== undefined) {
-      updates.subscribedToNewsletter = req.body.subscribedToNewsletter;
+    if (updates.email) {
+      updates.email = String(updates.email).toLowerCase();
     }
 
     if (Object.keys(updates).length === 0) {
@@ -153,14 +175,18 @@ export const updateUser = async (
     const user = await User.findByIdAndUpdate(req.params.id, updates, {
       new: true,
       runValidators: true,
-      select: '-password',
-    });
+    }).select('-password');
 
     if (!user) {
       throw new ApiError('User not found', 404);
     }
 
-    res.json(ApiResponse.success({ user }, 'User updated successfully'));
+    res.json(
+      ApiResponse.success(
+        { user: sanitizeUser(user) },
+        'User updated successfully'
+      )
+    );
   } catch (error) {
     next(error);
   }
@@ -195,6 +221,129 @@ export const getUserOrders = async (
         { orders },
         'Orders retrieved successfully',
         buildPaginationMeta(page, pageLimit, total)
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createUserByAdmin = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const payload = {
+      firstName: req.body.firstName,
+      lastName: req.body.lastName,
+      email: String(req.body.email).toLowerCase(),
+      phone: req.body.phone,
+      password: req.body.password,
+      role: req.body.role || UserRole.USER,
+      isVerified: req.body.isVerified ?? false,
+      isActive: req.body.isActive ?? true,
+      subscribedToNewsletter: req.body.subscribedToNewsletter ?? false,
+    };
+
+    const user = await User.create(payload);
+
+    res.status(201).json(
+      ApiResponse.success(
+        { user: sanitizeUser(user) },
+        'User created successfully'
+      )
+    );
+  } catch (error: any) {
+    if (error?.code === 11000) {
+      next(new ApiError('A user with this email already exists', 409));
+      return;
+    }
+    next(error);
+  }
+};
+
+export const deleteUserByAdmin = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const targetUserId = req.params.id;
+    const currentUserId = req.user?._id?.toString();
+
+    if (currentUserId && currentUserId === targetUserId) {
+      throw new ApiError('You cannot delete your own account', 400);
+    }
+
+    const user = await User.findByIdAndDelete(targetUserId);
+
+    if (!user) {
+      throw new ApiError('User not found', 404);
+    }
+
+    res.json(ApiResponse.success(null, 'User deleted successfully'));
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const resetUserPasswordByAdmin = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const user = await User.findById(req.params.id).select('+password');
+
+    if (!user) {
+      throw new ApiError('User not found', 404);
+    }
+
+    user.password = req.body.password;
+    user.passwordResetToken = undefined;
+    user.passwordResetExpire = undefined;
+
+    await user.save();
+
+    res.json(
+      ApiResponse.success(
+        { user: sanitizeUser(user) },
+        'User password reset successfully'
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const toggleUserStatus = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      throw new ApiError('User not found', 404);
+    }
+
+    if (req.body.isActive === undefined) {
+      user.isActive = !user.isActive;
+    } else {
+      user.isActive = Boolean(req.body.isActive);
+    }
+
+    await user.save();
+
+    res.json(
+      ApiResponse.success(
+        {
+          user: sanitizeUser(user),
+          status: user.isActive ? 'active' : 'inactive',
+        },
+        'User status updated successfully'
       )
     );
   } catch (error) {

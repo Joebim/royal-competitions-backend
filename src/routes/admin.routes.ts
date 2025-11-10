@@ -23,7 +23,15 @@ import {
   updateChampion,
 } from '../controllers/champion.controller';
 import { getAllOrdersForAdmin } from '../controllers/order.controller';
-import { getUsers, getUserById, updateUser } from '../controllers/user.controller';
+import {
+  createUserByAdmin,
+  deleteUserByAdmin,
+  getUsers,
+  getUserById,
+  resetUserPasswordByAdmin,
+  toggleUserStatus,
+  updateUser,
+} from '../controllers/user.controller';
 import { getDashboardSummary } from '../controllers/admin.controller';
 import { protect, adminOnly, superAdminOnly } from '../middleware/auth.middleware';
 import { upload } from '../middleware/upload.middleware';
@@ -37,6 +45,12 @@ import {
   createChampionSchema,
   updateChampionSchema,
 } from '../validators/champion.validator';
+import {
+  createAdminUserSchema,
+  resetAdminUserPasswordSchema,
+  toggleAdminUserStatusSchema,
+  updateAdminUserSchema,
+} from '../validators/user.validator';
 
 const router = Router();
 
@@ -91,9 +105,22 @@ router.delete('/champions/:id', deleteChampion);
 router.get('/orders', getAllOrdersForAdmin);
 
 // Users management
+router.post('/users', validate(createAdminUserSchema), createUserByAdmin);
 router.get('/users', getUsers);
 router.get('/users/:id', getUserById);
-router.patch('/users/:id', updateUser);
+router.put('/users/:id', validate(updateAdminUserSchema), updateUser);
+router.patch('/users/:id', validate(updateAdminUserSchema), updateUser);
+router.post(
+  '/users/:id/reset-password',
+  validate(resetAdminUserPasswordSchema),
+  resetUserPasswordByAdmin
+);
+router.patch(
+  '/users/:id/status',
+  validate(toggleAdminUserStatusSchema),
+  toggleUserStatus
+);
+router.delete('/users/:id', deleteUserByAdmin);
 
 export default router;
 

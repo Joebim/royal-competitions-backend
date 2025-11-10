@@ -1,11 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import {
-  Champion,
-  Competition,
-  Draw,
-  Review,
-  SiteStat,
-} from '../models';
+import { Champion, Competition, Draw, Review, SiteStat, User } from '../models';
 import { CompetitionStatus } from '../models/Competition.model';
 import { ApiResponse } from '../utils/apiResponse';
 
@@ -89,15 +83,33 @@ const formatReviewCard = (review: any) => ({
 });
 
 const loadStats = async () => {
-  const stats = await SiteStat.find().lean();
+  const [stats, totalUsers] = await Promise.all([
+    SiteStat.find().lean(),
+    User.countDocuments({}),
+  ]);
 
   if (stats.length > 0) {
-    return stats.map((stat) => ({
+    const formattedStats = stats.map((stat) => ({
       key: stat.key,
       label: stat.label || stat.key,
       value: formatNumber(stat.value),
       description: stat.description,
     }));
+
+    const hasUserStat = formattedStats.some(
+      (stat) => stat.key.toLowerCase() === 'users'
+    );
+
+    if (!hasUserStat) {
+      formattedStats.push({
+        key: 'users',
+        label: 'Players',
+        value: formatNumber(totalUsers),
+        description: undefined,
+      });
+    }
+
+    return formattedStats;
   }
 
   const [totalCompetitions, totalDraws, totalChampions] = await Promise.all([
@@ -121,6 +133,12 @@ const loadStats = async () => {
       key: 'champions',
       label: 'Champions',
       value: formatNumber(totalChampions),
+    },
+    {
+      key: 'users',
+      label: 'Players',
+      value: formatNumber(totalUsers),
+      description: undefined,
     },
   ];
 };
@@ -159,18 +177,9 @@ export const getHomeContent = async (
         .sort({ createdAt: -1 })
         .limit(8)
         .lean(),
-      Champion.find({ isActive: true })
-        .sort({ createdAt: -1 })
-        .limit(6)
-        .lean(),
-      Draw.find({ isActive: true })
-        .sort({ drawDate: -1 })
-        .limit(6)
-        .lean(),
-      Review.find({ isActive: true })
-        .sort({ publishedAt: -1 })
-        .limit(6)
-        .lean(),
+      Champion.find({ isActive: true }).sort({ createdAt: -1 }).limit(6).lean(),
+      Draw.find({ isActive: true }).sort({ drawDate: -1 }).limit(6).lean(),
+      Review.find({ isActive: true }).sort({ publishedAt: -1 }).limit(6).lean(),
       loadStats(),
     ]);
 
@@ -214,7 +223,9 @@ export const getPageContent = async (
       ApiResponse.success(
         {
           slug,
-          title: slug.replace(/-/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()),
+          title: slug
+            .replace(/-/g, ' ')
+            .replace(/\b\w/g, (char) => char.toUpperCase()),
           body: null,
         },
         'Page content not configured'
@@ -224,4 +235,3 @@ export const getPageContent = async (
     next(error);
   }
 };
-
