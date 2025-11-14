@@ -1,15 +1,14 @@
 import Joi from 'joi';
 
-const categoryOptions = [
-  'Luxury Cars',
-  'Tech & Gadgets',
-  'Holidays',
-  'Cash Prizes',
-  'Home & Garden',
-  'Fashion & Watches',
-  'Experiences',
-  'Other',
-];
+// Categories are now stored in the database and can be added dynamically
+// Validation accepts any string - categories are managed via Category model
+
+const specificationsSchema = Joi.array().items(
+  Joi.object({
+    label: Joi.string().trim().required(),
+    value: Joi.string().trim().required(),
+  })
+);
 
 const answerOptionsSchema = Joi.array()
   .items(Joi.string().trim().min(1))
@@ -18,25 +17,18 @@ const answerOptionsSchema = Joi.array()
 
 const questionSchema = Joi.object({
   question: Joi.string().trim().required(),
-  options: answerOptionsSchema,
-  answerOptions: answerOptionsSchema,
+  options: answerOptionsSchema.optional(),
+  answerOptions: answerOptionsSchema.optional(),
   correctAnswer: Joi.string().trim().required(),
   explanation: Joi.string().allow('').optional(),
 }).custom((value, helpers) => {
   if (!value.options && !value.answerOptions) {
     return helpers.error('any.custom', {
-      message: 'Question options are required',
+      message: 'Question options or answerOptions are required',
     });
   }
   return value;
 });
-
-const specificationsSchema = Joi.array().items(
-  Joi.object({
-    label: Joi.string().trim().required(),
-    value: Joi.string().trim().required(),
-  })
-);
 
 export const createCompetitionSchema = Joi.object({
   title: Joi.string().min(5).max(200).required(),
@@ -47,24 +39,32 @@ export const createCompetitionSchema = Joi.object({
   cashAlternative: Joi.number().min(0),
   cashAlternativeDetails: Joi.string().max(500),
   originalPrice: Joi.number().min(0),
-  ticketPrice: Joi.number().min(0.1).required(),
-  maxTickets: Joi.number().min(10).max(100000).required(),
-  soldTickets: Joi.number().min(0),
-  question: questionSchema.required(),
-  category: Joi.string().valid(...categoryOptions).required(),
+  ticketPricePence: Joi.number().min(1).required(), // Price in pence (e.g., 100 = £1.00)
+  ticketLimit: Joi.number().min(10).max(100000).allow(null), // null = unlimited
+  ticketsSold: Joi.number().min(0),
+  category: Joi.string().trim().min(2).max(100).required().messages({
+    'string.empty': 'Category is required',
+    'string.min': 'Category must be at least 2 characters',
+    'string.max': 'Category cannot exceed 100 characters',
+    'any.required': 'Category is required',
+  }),
   status: Joi.string().valid(
     'draft',
-    'active',
-    'drawing',
-    'completed',
+    'live',
+    'closed',
+    'drawn',
     'cancelled'
   ),
-  drawDate: Joi.date().required(),
+  drawMode: Joi.string().valid('automatic', 'admin_triggered', 'manual'),
+  drawAt: Joi.date().required(), // When the draw should occur
+  freeEntryEnabled: Joi.boolean(),
+  noPurchasePostalAddress: Joi.string().allow(''),
+  termsUrl: Joi.string().uri().allow(''),
+  question: questionSchema.optional().allow(null), // Optional skill question
   startDate: Joi.date(),
   endDate: Joi.date().greater(Joi.ref('startDate')),
   featured: Joi.boolean(),
   isActive: Joi.boolean(),
-  isGuaranteedDraw: Joi.boolean(),
   features: Joi.alternatives()
     .try(Joi.array().items(Joi.string()), Joi.string())
     .optional(),
@@ -79,6 +79,7 @@ export const createCompetitionSchema = Joi.object({
     .optional(),
   termsAndConditions: Joi.string().allow(''),
   slug: Joi.string(),
+  nextTicketNumber: Joi.number().min(1),
 });
 
 export const updateCompetitionSchema = createCompetitionSchema.fork(

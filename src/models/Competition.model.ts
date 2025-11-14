@@ -2,17 +2,16 @@ import mongoose, { Schema, Document, Model } from 'mongoose';
 
 export enum CompetitionStatus {
   DRAFT = 'draft',
-  ACTIVE = 'active',
-  DRAWING = 'drawing',
-  COMPLETED = 'completed',
+  LIVE = 'live',
+  CLOSED = 'closed',
+  DRAWN = 'drawn',
   CANCELLED = 'cancelled',
 }
 
-export interface IQuestion {
-  question: string;
-  options: string[];
-  correctAnswer: string;
-  explanation?: string;
+export enum DrawMode {
+  AUTOMATIC = 'automatic',
+  ADMIN_TRIGGERED = 'admin_triggered',
+  MANUAL = 'manual',
 }
 
 export interface ICompetition extends Document {
@@ -29,11 +28,22 @@ export interface ICompetition extends Document {
     publicId: string;
     thumbnail?: string;
   }>;
-  ticketPrice: number;
-  maxTickets: number;
-  soldTickets: number;
+  ticketPricePence: number; // Price in pence (e.g., 100 = £1.00)
+  ticketLimit: number | null; // null = unlimited
+  ticketsSold: number;
   status: CompetitionStatus;
-  question: IQuestion;
+  drawMode: DrawMode;
+  drawAt: Date; // When the draw should occur
+  freeEntryEnabled: boolean;
+  noPurchasePostalAddress?: string; // Postal address for free entry
+  termsUrl?: string; // URL to terms and conditions
+  question?: {
+    question: string;
+    options?: string[];
+    answerOptions?: string[];
+    correctAnswer: string;
+    explanation?: string;
+  };
   features?: string[];
   included?: string[];
   specifications?: Array<{
@@ -43,22 +53,21 @@ export interface ICompetition extends Document {
   slug?: string;
   tags?: string[];
   termsAndConditions?: string;
-  drawDate: Date;
   startDate?: Date;
   endDate?: Date;
   drawnAt?: Date;
   publishedAt?: Date;
-  isGuaranteedDraw?: boolean;
-  winnerId?: mongoose.Types.ObjectId;
   category: string;
   featured: boolean;
   isActive: boolean;
   deletedAt?: Date;
   createdBy: mongoose.Types.ObjectId;
+  nextTicketNumber: number; // Sequential ticket number assignment
   createdAt: Date;
   updatedAt: Date;
   getAvailableTickets(): number;
   getSoldPercentage(): number;
+  getRemainingTickets(): number;
 }
 
 const competitionSchema = new Schema<ICompetition>(
@@ -149,18 +158,22 @@ const competitionSchema = new Schema<ICompetition>(
       type: String,
       trim: true,
     },
-    ticketPrice: {
+    termsUrl: {
+      type: String,
+      trim: true,
+    },
+    ticketPricePence: {
       type: Number,
       required: [true, 'Ticket price is required'],
-      min: [0.5, 'Ticket price must be at least £0.50'],
+      min: [1, 'Ticket price must be at least 1 pence'],
     },
-    maxTickets: {
+    ticketLimit: {
       type: Number,
-      required: [true, 'Maximum tickets is required'],
-      min: [10, 'Must have at least 10 tickets'],
-      max: [100000, 'Cannot exceed 100,000 tickets'],
+      default: null, // null = unlimited
+      min: [1, 'Ticket limit must be at least 1'],
+      max: [1000000, 'Cannot exceed 1,000,000 tickets'],
     },
-    soldTickets: {
+    ticketsSold: {
       type: Number,
       default: 0,
       min: 0,
@@ -170,41 +183,39 @@ const competitionSchema = new Schema<ICompetition>(
       enum: Object.values(CompetitionStatus),
       default: CompetitionStatus.DRAFT,
     },
+    drawMode: {
+        type: String,
+      enum: Object.values(DrawMode),
+      default: DrawMode.AUTOMATIC,
+    },
+    drawAt: {
+      type: Date,
+      required: [true, 'Draw date is required'],
+    },
+    drawnAt: Date,
+    freeEntryEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    noPurchasePostalAddress: {
+      type: String,
+      trim: true,
+    },
     question: {
       question: {
         type: String,
-        required: [true, 'Question is required'],
+        trim: true,
       },
-      options: {
-        type: [String],
-        required: [true, 'Question options are required'],
-        validate: {
-          validator: (v: string[]) => v.length >= 2 && v.length <= 6,
-          message: 'Question must have between 2 and 6 options',
-        },
-      },
+      options: [String],
+      answerOptions: [String],
       correctAnswer: {
         type: String,
-        required: [true, 'Correct answer is required'],
+        trim: true,
       },
       explanation: {
         type: String,
+        trim: true,
       },
-    },
-    drawDate: {
-      type: Date,
-      required: [true, 'Draw date is required'],
-      validate: {
-        validator: function (v: Date) {
-          return v > new Date();
-        },
-        message: 'Draw date must be in the future',
-      },
-    },
-    drawnAt: Date,
-    winnerId: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
     },
     startDate: {
       type: Date,
@@ -215,23 +226,11 @@ const competitionSchema = new Schema<ICompetition>(
     publishedAt: {
       type: Date,
     },
-    isGuaranteedDraw: {
-      type: Boolean,
-      default: false,
-    },
     category: {
       type: String,
       required: [true, 'Category is required'],
-      enum: [
-        'Luxury Cars',
-        'Tech & Gadgets',
-        'Holidays',
-        'Cash Prizes',
-        'Home & Garden',
-        'Fashion & Watches',
-        'Experiences',
-        'Other',
-      ],
+      trim: true,
+      // No enum - categories are stored in database and can be dynamically created
     },
     featured: {
       type: Boolean,
@@ -247,6 +246,11 @@ const competitionSchema = new Schema<ICompetition>(
       ref: 'User',
       required: true,
     },
+    nextTicketNumber: {
+      type: Number,
+      default: 1,
+      min: 1,
+    },
   },
   {
     timestamps: true,
@@ -256,33 +260,45 @@ const competitionSchema = new Schema<ICompetition>(
 );
 
 // Indexes
-competitionSchema.index({ status: 1, drawDate: 1 });
+competitionSchema.index({ status: 1, drawAt: 1 });
 competitionSchema.index({ category: 1, status: 1 });
 competitionSchema.index({ featured: 1, status: 1 });
 competitionSchema.index({ createdAt: -1 });
 competitionSchema.index({ slug: 1 }, { unique: true, sparse: true });
+competitionSchema.index({ drawAt: 1, status: 1 }); // For draw scheduler
 
-// Validate sold tickets doesn't exceed max tickets
+// Validate sold tickets doesn't exceed ticket limit (if set)
 competitionSchema.pre('save', function (next) {
-  if (this.soldTickets > this.maxTickets) {
-    throw new Error('Sold tickets cannot exceed maximum tickets');
+  if (this.ticketLimit !== null && this.ticketsSold > this.ticketLimit) {
+    throw new Error('Sold tickets cannot exceed ticket limit');
   }
   next();
 });
 
 // Get available tickets
 competitionSchema.methods.getAvailableTickets = function (): number {
-  return this.maxTickets - this.soldTickets;
+  if (this.ticketLimit === null) {
+    return Infinity;
+  }
+  return Math.max(0, this.ticketLimit - this.ticketsSold);
+};
+
+// Get remaining tickets (alias for getAvailableTickets)
+competitionSchema.methods.getRemainingTickets = function (): number {
+  return this.getAvailableTickets();
 };
 
 // Get sold percentage
 competitionSchema.methods.getSoldPercentage = function (): number {
-  return (this.soldTickets / this.maxTickets) * 100;
+  if (this.ticketLimit === null || this.ticketLimit === 0) {
+    return 0;
+  }
+  return Math.min(100, (this.ticketsSold / this.ticketLimit) * 100);
 };
 
-// Virtual for entries
-competitionSchema.virtual('entries', {
-  ref: 'Entry',
+// Virtual for tickets
+competitionSchema.virtual('tickets', {
+  ref: 'Ticket',
   localField: '_id',
   foreignField: 'competitionId',
 });

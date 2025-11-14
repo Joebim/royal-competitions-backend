@@ -16,8 +16,9 @@ class StripeService {
    */
   async createPaymentIntent(data: CreatePaymentIntentData): Promise<any> {
     try {
+      // Amount is already in pence, no need to multiply by 100
       const paymentIntent = await stripe.paymentIntents.create({
-        amount: Math.round(data.amount * 100), // Convert to pence
+        amount: Math.round(data.amount), // Already in pence
         currency: data.currency || 'gbp',
         customer: data.customerId,
         metadata: data.metadata || {},

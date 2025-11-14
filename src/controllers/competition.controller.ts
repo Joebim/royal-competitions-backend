@@ -1,10 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { FilterQuery, SortOrder } from 'mongoose';
-import { Competition, Entry, UserRole } from '../models';
-import {
-  CompetitionStatus,
-  ICompetition,
-} from '../models/Competition.model';
+import { Competition, Entry, UserRole, Category } from '../models';
+import { CompetitionStatus, ICompetition } from '../models/Competition.model';
 import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
 import cloudinaryService from '../services/cloudinary.service';
@@ -104,12 +101,15 @@ const buildCompetitionFilters = (
   const priceMin = parseNumberParam(query.priceMin);
   const priceMax = parseNumberParam(query.priceMax);
   if (priceMin !== undefined || priceMax !== undefined) {
-    filters.ticketPrice = {};
+    filters.ticketPricePence = {};
+    // Convert to pence if provided in pounds (assume if < 1000 it's in pence)
     if (priceMin !== undefined) {
-      filters.ticketPrice.$gte = priceMin;
+      filters.ticketPricePence.$gte =
+        priceMin < 1000 ? priceMin : priceMin * 100;
     }
     if (priceMax !== undefined) {
-      filters.ticketPrice.$lte = priceMax;
+      filters.ticketPricePence.$lte =
+        priceMax < 1000 ? priceMax : priceMax * 100;
     }
   }
 
@@ -128,9 +128,9 @@ const buildCompetitionFilters = (
   const fromDate = parseDateParam(query.from);
   const toDate = parseDateParam(query.to);
   if (fromDate || toDate) {
-    filters.drawDate = {};
-    if (fromDate) filters.drawDate.$gte = fromDate;
-    if (toDate) filters.drawDate.$lte = toDate;
+    filters.drawAt = {};
+    if (fromDate) filters.drawAt.$gte = fromDate;
+    if (toDate) filters.drawAt.$lte = toDate;
   }
 
   if (query.ids) {
@@ -208,52 +208,8 @@ const parseSpecifications = (
   return undefined;
 };
 
-const parseQuestion = (body: any): ICompetition['question'] => {
-  if (body.question && typeof body.question === 'object') {
-    const options =
-      parseStringArray(body.question.options) ||
-      parseStringArray(body.question.answerOptions);
-
-    return {
-      question: body.question.question || body.question.prompt || '',
-      options: options || [],
-      correctAnswer:
-        body.question.correctAnswer || body.question.answer || '',
-      explanation: body.question.explanation,
-    };
-  }
-
-  if (typeof body.question === 'string') {
-    try {
-      const parsed = JSON.parse(body.question);
-      return parseQuestion({ question: parsed });
-    } catch {
-      // continue to fall back
-    }
-  }
-
-  const options =
-    parseStringArray(body.answerOptions) ||
-    parseStringArray(body.options) ||
-    [];
-
-  return {
-    question:
-      body.questionPrompt ||
-      body.prompt ||
-      body.questionText ||
-      body.question ||
-      '',
-    options,
-    correctAnswer: body.correctAnswer || '',
-    explanation: body.explanation,
-  };
-};
-
 const parseCompetitionPayload = (body: any) => {
-  const payload: Partial<ICompetition> & {
-    question?: ICompetition['question'];
-  } = {};
+  const payload: Partial<ICompetition> = {};
 
   if (body.title !== undefined) payload.title = body.title;
   if (body.shortDescription !== undefined)
@@ -278,84 +234,144 @@ const parseCompetitionPayload = (body: any) => {
   const originalPrice = parseNumberParam(body.originalPrice);
   if (originalPrice !== undefined) payload.originalPrice = originalPrice;
 
-  const ticketPrice = parseNumberParam(
-    body.ticketPrice ?? body.price ?? body.ticket_price
+  // Ticket price in pence
+  const ticketPricePence = parseNumberParam(
+    body.ticketPricePence ?? body.ticketPrice ?? body.price ?? body.ticket_price
   );
-  if (ticketPrice !== undefined) payload.ticketPrice = ticketPrice;
+  if (ticketPricePence !== undefined) {
+    // Convert to pence if provided in pounds
+    payload.ticketPricePence =
+      ticketPricePence < 100
+        ? Math.round(ticketPricePence * 100)
+        : ticketPricePence;
+  }
 
-  const maxTickets = parseNumberParam(body.maxTickets ?? body.max_tickets);
-  if (maxTickets !== undefined) payload.maxTickets = maxTickets;
+  // Ticket limit (null = unlimited)
+  const ticketLimit = parseNumberParam(
+    body.ticketLimit ?? body.maxTickets ?? body.max_tickets
+  );
+  if (ticketLimit !== undefined) {
+    payload.ticketLimit = ticketLimit;
+  } else if (body.ticketLimit === null) {
+    payload.ticketLimit = null; // Unlimited
+  }
 
-  const soldTickets = parseNumberParam(body.soldTickets);
-  if (soldTickets !== undefined) payload.soldTickets = soldTickets;
+  // Tickets sold
+  const ticketsSold = parseNumberParam(body.ticketsSold ?? body.soldTickets);
+  if (ticketsSold !== undefined) payload.ticketsSold = ticketsSold;
 
+  // Status
   if (body.status !== undefined) payload.status = body.status;
+
+  // Draw mode
+  if (body.drawMode !== undefined) payload.drawMode = body.drawMode;
+
+  // Draw date (drawAt)
+  const drawAt = parseDateParam(body.drawAt ?? body.drawDate);
+  if (drawAt) payload.drawAt = drawAt;
+
+  // Free entry
+  const freeEntryEnabled = parseBooleanParam(
+    body.freeEntryEnabled ?? body.freeEntry
+  );
+  if (freeEntryEnabled !== undefined)
+    payload.freeEntryEnabled = freeEntryEnabled;
+
+  // Postal address
+  if (body.noPurchasePostalAddress !== undefined) {
+    payload.noPurchasePostalAddress = body.noPurchasePostalAddress;
+  }
+
+  // Terms URL
+  if (body.termsUrl !== undefined) {
+    payload.termsUrl = body.termsUrl;
+  }
+
+  // Question (optional - for skill-based competitions)
+  if (body.question !== undefined) {
+    if (
+      body.question === null ||
+      body.question === '' ||
+      (typeof body.question === 'object' &&
+        Object.keys(body.question).length === 0)
+    ) {
+      // Allow removing question by setting to null - will be handled in update function
+      payload.question = null as any;
+    } else if (typeof body.question === 'object' && body.question.question) {
+      payload.question = {
+        question: body.question.question,
+        options: body.question.options || body.question.answerOptions,
+        answerOptions: body.question.answerOptions || body.question.options,
+        correctAnswer: body.question.correctAnswer,
+        explanation: body.question.explanation || '',
+      };
+    }
+  }
+
+  // Category
   if (body.category !== undefined) payload.category = body.category;
 
+  // Featured
   const featured = parseBooleanParam(body.featured);
   if (featured !== undefined) payload.featured = featured;
 
+  // Active
   const isActive = parseBooleanParam(body.isActive ?? body.active);
   if (isActive !== undefined) payload.isActive = isActive;
 
-  const isGuaranteedDraw = parseBooleanParam(
-    body.isGuaranteedDraw ?? body.guaranteedDraw
-  );
-  if (isGuaranteedDraw !== undefined) payload.isGuaranteedDraw = isGuaranteedDraw;
-
+  // Dates
   const startDate = parseDateParam(body.startDate);
   if (startDate) payload.startDate = startDate;
 
   const endDate = parseDateParam(body.endDate);
   if (endDate) payload.endDate = endDate;
 
-  const drawDate = parseDateParam(body.drawDate);
-  if (drawDate) payload.drawDate = drawDate;
-
+  // Arrays
   payload.features = parseStringArray(body.features);
   payload.included = parseStringArray(body.included);
   payload.tags = parseStringArray(body.tags);
   payload.specifications = parseSpecifications(body.specifications);
+
+  // Terms and conditions
   if (body.termsAndConditions !== undefined) {
     payload.termsAndConditions = body.termsAndConditions;
   }
 
-  const question = parseQuestion(body);
-  if (question.question && question.options?.length) {
-    payload.question = question;
-  }
-
+  // Slug
   if (body.slug) {
     payload.slug = slugify(body.slug);
   }
 
+  // Next ticket number (for sequential assignment)
+  const nextTicketNumber = parseNumberParam(body.nextTicketNumber);
+  if (nextTicketNumber !== undefined)
+    payload.nextTicketNumber = nextTicketNumber;
+
   return payload;
 };
 
-const sanitizeCompetition = (
-  competitionDoc: ICompetition,
-  includeCorrectAnswer: boolean
-) => {
+const sanitizeCompetition = (competitionDoc: ICompetition) => {
   const competition = competitionDoc.toObject
     ? competitionDoc.toObject()
     : competitionDoc;
 
-  if (!includeCorrectAnswer && competition.question) {
-    delete competition.question.correctAnswer;
-  }
+  const availableTickets =
+    competition.ticketLimit === null
+      ? Infinity
+      : competition.ticketLimit - competition.ticketsSold;
 
-  const availableTickets = competition.maxTickets - competition.soldTickets;
   const progress =
-    competition.maxTickets > 0
-      ? Math.round((competition.soldTickets / competition.maxTickets) * 100)
-      : 0;
+    competition.ticketLimit === null || competition.ticketLimit === 0
+      ? 0
+      : Math.round((competition.ticketsSold / competition.ticketLimit) * 100);
 
   return {
     ...competition,
     progress: {
-      soldTickets: competition.soldTickets,
-      maxTickets: competition.maxTickets,
-      entriesRemaining: Math.max(availableTickets, 0),
+      soldTickets: competition.ticketsSold,
+      maxTickets: competition.ticketLimit,
+      entriesRemaining:
+        availableTickets === Infinity ? null : Math.max(availableTickets, 0),
       percentage: Math.min(progress, 100),
     },
   };
@@ -386,14 +402,11 @@ export const getCompetitions = async (
     const { skip, limit: pageLimit } = getPagination(page, limit);
 
     const [items, total] = await Promise.all([
-      Competition.find(filters)
-        .sort(sort)
-        .skip(skip)
-        .limit(pageLimit),
+      Competition.find(filters).sort(sort).skip(skip).limit(pageLimit),
       Competition.countDocuments(filters),
     ]);
 
-    const data = items.map((item) => sanitizeCompetition(item, false));
+    const data = items.map((item) => sanitizeCompetition(item));
 
     res.json(
       ApiResponse.success(
@@ -425,13 +438,13 @@ export const getAdminCompetitions = async (
     const [items, total] = await Promise.all([
       Competition.find(filters)
         .sort(sort)
-      .skip(skip)
-      .limit(pageLimit)
+        .skip(skip)
+        .limit(pageLimit)
         .populate('createdBy', 'firstName lastName email'),
       Competition.countDocuments(filters),
     ]);
 
-    const data = items.map((item) => sanitizeCompetition(item, true));
+    const data = items.map((item) => sanitizeCompetition(item));
 
     res.json(
       ApiResponse.success(
@@ -463,12 +476,9 @@ export const getCompetition = async (
       throw new ApiError('Competition not found', 404);
     }
 
-    const includeCorrectAnswer = !!req.user?.role
-      && [UserRole.ADMIN, UserRole.SUPER_ADMIN].includes(req.user.role);
-
     res.json(
       ApiResponse.success(
-        { competition: sanitizeCompetition(competition, includeCorrectAnswer) },
+        { competition: sanitizeCompetition(competition) },
         'Competition retrieved successfully'
       )
     );
@@ -484,40 +494,103 @@ export const getCompetitionProgress = async (
 ) => {
   try {
     const competition = await Competition.findById(req.params.id).select(
-      'maxTickets soldTickets status isActive drawDate'
+      'ticketLimit ticketsSold status isActive drawAt'
     );
 
     if (!competition) {
       throw new ApiError('Competition not found', 404);
     }
 
-    const remaining = Math.max(
-      competition.maxTickets - competition.soldTickets,
-      0
-    );
+    const remaining =
+      competition.ticketLimit === null
+        ? Infinity
+        : Math.max(competition.ticketLimit - competition.ticketsSold, 0);
 
     res.json(
       ApiResponse.success(
         {
           progress: {
-            soldTickets: competition.soldTickets,
-            maxTickets: competition.maxTickets,
-            entriesRemaining: remaining,
+            soldTickets: competition.ticketsSold,
+            maxTickets: competition.ticketLimit,
+            entriesRemaining: remaining === Infinity ? null : remaining,
             percentage:
-              competition.maxTickets > 0
-                ? Math.round(
-                    (competition.soldTickets / competition.maxTickets) * 100
-                  )
-                : 0,
+              competition.ticketLimit === null || competition.ticketLimit === 0
+                ? 0
+                : Math.round(
+                    (competition.ticketsSold / competition.ticketLimit) * 100
+                  ),
           },
           status: competition.status,
-          drawDate: competition.drawDate,
+          drawAt: competition.drawAt,
         },
         'Competition progress retrieved'
       )
     );
   } catch (error) {
     next(error);
+  }
+};
+
+/**
+ * Helper function to ensure category exists and update usage count
+ */
+const ensureCategoryExists = async (
+  categoryName: string,
+  userId?: any
+): Promise<void> => {
+  if (!categoryName || !categoryName.trim()) {
+    return;
+  }
+
+  const trimmedName = categoryName.trim();
+  const categorySlug = trimmedName
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
+
+  // Check if category exists
+  let category = await Category.findOne({
+    $or: [
+      { name: { $regex: new RegExp(`^${trimmedName}$`, 'i') } },
+      { slug: categorySlug },
+    ],
+  });
+
+  if (!category) {
+    // Auto-create category if it doesn't exist
+    // Slug will be auto-generated by the pre-save hook
+    category = await Category.create({
+      name: trimmedName,
+      isUserCreated: !!userId,
+      createdBy: userId,
+      isActive: true,
+      usageCount: 0,
+    });
+  }
+
+  // Increment usage count
+  category.usageCount = (category.usageCount || 0) + 1;
+  await category.save();
+};
+
+/**
+ * Helper function to decrement category usage count
+ */
+const decrementCategoryUsage = async (categoryName: string): Promise<void> => {
+  if (!categoryName || !categoryName.trim()) {
+    return;
+  }
+
+  const trimmedName = categoryName.trim();
+  const category = await Category.findOne({
+    name: { $regex: new RegExp(`^${trimmedName}$`, 'i') },
+  });
+
+  if (category && category.usageCount > 0) {
+    category.usageCount = category.usageCount - 1;
+    await category.save();
   }
 };
 
@@ -539,8 +612,13 @@ export const createCompetition = async (
       throw new ApiError('Missing required fields', 400);
     }
 
-    if (!payload.question) {
-      throw new ApiError('Competition question is required', 400);
+    if (!payload.ticketPricePence) {
+      throw new ApiError('Ticket price is required', 400);
+    }
+
+    // Ensure category exists and update usage count
+    if (payload.category) {
+      await ensureCategoryExists(payload.category, req.user._id);
     }
 
     if (req.files && Array.isArray(req.files) && req.files.length > 0) {
@@ -557,12 +635,14 @@ export const createCompetition = async (
 
     const competition = await Competition.create(payload);
 
-    res.status(201).json(
-      ApiResponse.success(
-        { competition: sanitizeCompetition(competition, true) },
-        'Competition created successfully'
-      )
-    );
+    res
+      .status(201)
+      .json(
+        ApiResponse.success(
+          { competition: sanitizeCompetition(competition) },
+          'Competition created successfully'
+        )
+      );
   } catch (error) {
     next(error);
   }
@@ -575,12 +655,23 @@ export const updateCompetition = async (
 ) => {
   try {
     const existing = await Competition.findById(req.params.id);
-    
+
     if (!existing) {
       throw new ApiError('Competition not found', 404);
     }
 
     const payload = parseCompetitionPayload(req.body);
+
+    // Handle category change
+    if (payload.category && payload.category !== existing.category) {
+      // Decrement old category usage
+      await decrementCategoryUsage(existing.category);
+      // Ensure new category exists and increment usage
+      await ensureCategoryExists(payload.category, req.user?._id);
+    } else if (payload.category && !existing.category) {
+      // Category was added to competition that didn't have one
+      await ensureCategoryExists(payload.category, req.user?._id);
+    }
 
     if (payload.title) {
       payload.slug = slugify(payload.slug || payload.title);
@@ -603,9 +694,16 @@ export const updateCompetition = async (
       }));
     }
 
+    // Handle question removal (null = remove field)
+    const updateQuery: any = { ...payload };
+    if (payload.question === null) {
+      updateQuery.$unset = { question: 1 };
+      delete updateQuery.question;
+    }
+
     const competition = await Competition.findByIdAndUpdate(
       req.params.id,
-      payload,
+      updateQuery,
       { new: true, runValidators: true }
     );
 
@@ -613,12 +711,9 @@ export const updateCompetition = async (
       throw new ApiError('Competition not found after update', 404);
     }
 
-    const includeCorrectAnswer = !!req.user?.role
-      && [UserRole.ADMIN, UserRole.SUPER_ADMIN].includes(req.user.role);
-
     res.json(
       ApiResponse.success(
-        { competition: sanitizeCompetition(competition, includeCorrectAnswer) },
+        { competition: sanitizeCompetition(competition) },
         'Competition updated successfully'
       )
     );
@@ -650,7 +745,7 @@ export const updateCompetitionStatus = async (
 
     res.json(
       ApiResponse.success(
-        { competition: sanitizeCompetition(competition, true) },
+        { competition: sanitizeCompetition(competition) },
         'Competition status updated'
       )
     );
@@ -666,28 +761,28 @@ export const deleteCompetition = async (
 ) => {
   try {
     const competition = await Competition.findById(req.params.id);
-    
+
     if (!competition) {
       throw new ApiError('Competition not found', 404);
     }
 
-    if (competition.soldTickets > 0) {
+    if (competition.ticketsSold > 0) {
       throw new ApiError(
         'Cannot delete competition with sold tickets. Please cancel instead.',
         400
       );
     }
 
+    // Decrement category usage count
+    if (competition.category) {
+      await decrementCategoryUsage(competition.category);
+    }
+
     competition.isActive = false;
     competition.deletedAt = new Date();
     await competition.save();
 
-    res.json(
-      ApiResponse.success(
-        null,
-        'Competition removed successfully'
-      )
-    );
+    res.json(ApiResponse.success(null, 'Competition removed successfully'));
   } catch (error) {
     next(error);
   }
@@ -701,7 +796,7 @@ export const getFeaturedCompetitions = async (
   try {
     const competitions = await Competition.find({
       featured: true,
-      status: CompetitionStatus.ACTIVE,
+      status: CompetitionStatus.LIVE,
       isActive: true,
     })
       .sort({ createdAt: -1 })
@@ -710,9 +805,7 @@ export const getFeaturedCompetitions = async (
     res.json(
       ApiResponse.success(
         {
-          competitions: competitions.map((item) =>
-            sanitizeCompetition(item, false)
-          ),
+          competitions: competitions.map((item) => sanitizeCompetition(item)),
         },
         'Featured competitions retrieved'
       )
@@ -728,27 +821,38 @@ export const validateCompetitionAnswer = async (
   next: NextFunction
 ) => {
   try {
-    const competition = await Competition.findById(req.params.id).select(
-      'question'
-    );
+    const { id } = req.params;
+    const { answer } = req.body;
+
+    // Get the competition
+    const competition = await Competition.findById(id).select('question');
 
     if (!competition) {
       throw new ApiError('Competition not found', 404);
     }
 
-    const answer = (req.body.answer || '').toString().trim();
-    if (!answer) {
-      throw new ApiError('Answer is required', 400);
+    // If competition doesn't have a question, return true (no validation needed)
+    if (!competition.question || !competition.question.correctAnswer) {
+      res.json(
+        ApiResponse.success(
+          { isCorrect: true },
+          'Answer validated successfully (no question required)'
+        )
+      );
+      return;
     }
 
-    const isCorrect =
-      answer.toLowerCase() ===
-      competition.question.correctAnswer.toLowerCase();
+    // Compare answers (case-insensitive and trimmed)
+    const submittedAnswer = answer?.trim().toLowerCase() || '';
+    const correctAnswer = competition.question.correctAnswer
+      .trim()
+      .toLowerCase();
+    const isCorrect = submittedAnswer === correctAnswer;
 
     res.json(
       ApiResponse.success(
         { isCorrect },
-        'Answer validated successfully'
+        isCorrect ? 'Answer is correct' : 'Answer is incorrect'
       )
     );
   } catch (error) {

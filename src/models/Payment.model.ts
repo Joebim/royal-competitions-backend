@@ -53,8 +53,7 @@ const paymentSchema = new Schema<IPayment>(
     paymentIntentId: {
       type: String,
       required: true,
-      unique: true,
-      index: true,
+      unique: true, // unique: true automatically creates an index
     },
     paymentMethod: String,
     stripeCustomerId: String,

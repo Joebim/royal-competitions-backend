@@ -15,40 +15,23 @@ export enum OrderPaymentStatus {
   REFUNDED = 'refunded',
 }
 
-export interface IOrderItem {
-  competitionId: mongoose.Types.ObjectId;
-  competitionTitle: string;
-  quantity: number;
-  ticketPrice: number;
-  total: number;
-  answer: string;
-  ticketNumbers: string[];
-}
-
 export interface IOrder extends Document {
-  userId: mongoose.Types.ObjectId;
-  orderNumber: string;
-  items: IOrderItem[];
-  subtotal: number;
-  total: number;
-  fees?: number;
+  userId?: mongoose.Types.ObjectId; // Optional for guest checkout
+  competitionId: mongoose.Types.ObjectId;
+  orderNumber: string; // Unique order number
+  amountPence: number; // Total amount in pence
   currency: string;
+  quantity: number; // Number of tickets
   status: OrderStatus;
   paymentStatus: OrderPaymentStatus;
-  paymentIntentId?: string;
-  paymentMethod?: string;
+  stripePaymentIntent?: string;
+  ticketsReserved: number[]; // Array of reserved ticket numbers
+  paymentReference?: string;
   billingDetails?: {
     firstName: string;
     lastName: string;
     email: string;
-    phone: string;
-  };
-  billingAddress?: {
-    line1: string;
-    line2?: string;
-    city: string;
-    postalCode: string;
-    country: string;
+    phone?: string;
   };
   shippingAddress?: {
     line1: string;
@@ -57,10 +40,9 @@ export interface IOrder extends Document {
     postalCode: string;
     country: string;
   };
-  notes?: string;
+  marketingOptIn?: boolean;
   createdAt: Date;
   updatedAt: Date;
-  getTotalTickets(): number;
 }
 
 const addressSchema = new Schema(
@@ -74,81 +56,36 @@ const addressSchema = new Schema(
   { _id: false }
 );
 
-const orderItemSchema = new Schema<IOrderItem>(
-  {
-    competitionId: {
-      type: Schema.Types.ObjectId,
-      ref: 'Competition',
-      required: true,
-    },
-    competitionTitle: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    quantity: {
-      type: Number,
-      required: true,
-      min: 1,
-    },
-    ticketPrice: {
-      type: Number,
-      required: true,
-      min: 0,
-    },
-    total: {
-      type: Number,
-      required: true,
-      min: 0,
-    },
-    answer: {
-      type: String,
-      required: true,
-    },
-    ticketNumbers: {
-      type: [String],
-      default: [],
-    },
-  },
-  { _id: true }
-);
-
 const orderSchema = new Schema<IOrder>(
   {
     userId: {
       type: Schema.Types.ObjectId,
       ref: 'User',
+    },
+    competitionId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Competition',
       required: true,
-      index: true,
     },
     orderNumber: {
       type: String,
       required: true,
       unique: true,
-      index: true,
     },
-    items: {
-      type: [orderItemSchema],
-      default: [],
-    },
-    subtotal: {
+    amountPence: {
       type: Number,
       required: true,
-      min: 0,
-    },
-    total: {
-      type: Number,
-      required: true,
-      min: 0,
-    },
-    fees: {
-      type: Number,
       min: 0,
     },
     currency: {
       type: String,
       default: 'GBP',
       uppercase: true,
+    },
+    quantity: {
+      type: Number,
+      required: true,
+      min: 1,
     },
     status: {
       type: String,
@@ -160,17 +97,25 @@ const orderSchema = new Schema<IOrder>(
       enum: Object.values(OrderPaymentStatus),
       default: OrderPaymentStatus.PENDING,
     },
-    paymentIntentId: String,
-    paymentMethod: String,
+    stripePaymentIntent: {
+      type: String,
+    },
+    ticketsReserved: {
+      type: [Number],
+      default: [],
+    },
+    paymentReference: String,
     billingDetails: {
       firstName: String,
       lastName: String,
       email: String,
       phone: String,
     },
-    billingAddress: addressSchema,
     shippingAddress: addressSchema,
-    notes: String,
+    marketingOptIn: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
@@ -178,29 +123,10 @@ const orderSchema = new Schema<IOrder>(
 );
 
 orderSchema.index({ userId: 1, createdAt: -1 });
-orderSchema.index({ status: 1 });
-orderSchema.index({ paymentStatus: 1 });
-
-orderSchema.methods.getTotalTickets = function (): number {
-  return this.items.reduce(
-    (total: number, item: IOrderItem) => total + item.quantity,
-    0
-  );
-};
-
-orderSchema.pre('save', async function (next) {
-  if (!this.orderNumber) {
-    const timestamp = Date.now().toString(36).toUpperCase();
-    const random = Math.random().toString(36).substring(2, 8).toUpperCase();
-    this.orderNumber = `RC${timestamp}${random}`;
-  }
-  next();
-});
+orderSchema.index({ competitionId: 1 });
+orderSchema.index({ status: 1, paymentStatus: 1 });
+orderSchema.index({ stripePaymentIntent: 1 });
 
 const Order: Model<IOrder> = mongoose.model<IOrder>('Order', orderSchema);
 
 export default Order;
-
-
-
-

@@ -1,17 +1,22 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 
 export interface IWinner extends Document {
+  drawId: mongoose.Types.ObjectId;
   competitionId: mongoose.Types.ObjectId;
-  userId: mongoose.Types.ObjectId;
-  entryId: mongoose.Types.ObjectId;
-  ticketNumber: string;
-  announcedAt: Date;
+  ticketId: mongoose.Types.ObjectId;
+  userId?: mongoose.Types.ObjectId;
+  ticketNumber: number;
+  prize: string;
   notified: boolean;
+  notifiedAt?: Date;
   claimed: boolean;
   claimedAt?: Date;
+  claimCode: string; // Unique code for winner verification
+  proofImageUrl?: string; // URL to winner proof image
+  drawVideoUrl?: string; // URL to draw video
   testimonial?: {
     text: string;
-    rating: number;
+    rating?: number;
     approved: boolean;
   };
   createdAt: Date;
@@ -20,40 +25,59 @@ export interface IWinner extends Document {
 
 const winnerSchema = new Schema<IWinner>(
   {
+    drawId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Draw',
+      required: true,
+    },
     competitionId: {
       type: Schema.Types.ObjectId,
       ref: 'Competition',
       required: true,
-      unique: true,
-      index: true,
+    },
+    ticketId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Ticket',
+      required: true,
+      unique: true, // unique: true automatically creates an index
     },
     userId: {
       type: Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
-    },
-    entryId: {
-      type: Schema.Types.ObjectId,
-      ref: 'Entry',
-      required: true,
     },
     ticketNumber: {
-      type: String,
+      type: Number,
       required: true,
     },
-    announcedAt: {
-      type: Date,
-      default: Date.now,
+    prize: {
+      type: String,
+      required: true,
+      trim: true,
     },
     notified: {
       type: Boolean,
       default: false,
     },
+    notifiedAt: Date,
     claimed: {
       type: Boolean,
       default: false,
     },
     claimedAt: Date,
+    claimCode: {
+      type: String,
+      required: true,
+      unique: true, // unique: true automatically creates an index
+      trim: true,
+    },
+    proofImageUrl: {
+      type: String,
+      trim: true,
+    },
+    drawVideoUrl: {
+      type: String,
+      trim: true,
+    },
     testimonial: {
       text: String,
       rating: {
@@ -73,9 +97,21 @@ const winnerSchema = new Schema<IWinner>(
 );
 
 // Indexes
-// competitionId already has unique: true and index: true above
+winnerSchema.index({ competitionId: 1, createdAt: -1 });
 winnerSchema.index({ userId: 1 });
-winnerSchema.index({ announcedAt: -1 });
+winnerSchema.index({ notified: 1, claimed: 1 });
+
+// Generate claim code before saving
+winnerSchema.pre('save', async function (next) {
+  if (!this.claimCode) {
+    // Generate unique claim code: ABCD-1234 format
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const part1 = Array.from({ length: 4 }, () => chars.charAt(Math.floor(Math.random() * chars.length))).join('');
+    const part2 = Array.from({ length: 4 }, () => chars.charAt(Math.floor(Math.random() * chars.length))).join('');
+    this.claimCode = `${part1}-${part2}`;
+  }
+  next();
+});
 
 const Winner: Model<IWinner> = mongoose.model<IWinner>('Winner', winnerSchema);
 

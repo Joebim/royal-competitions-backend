@@ -8,6 +8,9 @@ import {
   resetUserPasswordByAdmin,
   toggleUserStatus,
   updateUser,
+  getUserProfileWithStats,
+  getMyTickets,
+  getMyOrdersGrouped,
 } from '../controllers/user.controller';
 import {
   getMyOrders,
@@ -26,6 +29,10 @@ const router = Router();
 
 router.use(protect);
 
+// User profile and stats
+router.get('/me/profile', getUserProfileWithStats);
+router.get('/me/tickets', getMyTickets);
+router.get('/me/orders/grouped', getMyOrdersGrouped);
 router.get('/me/entries', getMyEntries);
 router.get('/me/orders', getMyOrders);
 

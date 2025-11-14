@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
-import { Entry, Order, User } from '../models';
+import { Entry, Order, User, Ticket, TicketStatus, Winner } from '../models';
+import { OrderStatus, OrderPaymentStatus } from '../models/Order.model';
 import { UserRole } from '../models/User.model';
 import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
@@ -344,6 +345,265 @@ export const toggleUserStatus = async (
           status: user.isActive ? 'active' : 'inactive',
         },
         'User status updated successfully'
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get user profile with statistics
+ * GET /api/v1/users/me/profile
+ */
+export const getUserProfileWithStats = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    if (!req.user) {
+      throw new ApiError('Not authorized', 401);
+    }
+
+    const userId = req.user._id;
+
+    // Get user
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new ApiError('User not found', 404);
+    }
+
+    // Get statistics in parallel
+    const [
+      totalEntries,
+      totalSpentResult,
+      wins,
+      activeTickets,
+      competitionsEntered,
+    ] = await Promise.all([
+      // Total entries (tickets)
+      Ticket.countDocuments({
+        userId,
+        status: { $in: [TicketStatus.ACTIVE, TicketStatus.WINNER] },
+      }),
+      // Total spent (from paid orders)
+      Order.aggregate([
+        {
+          $match: {
+            userId,
+            paymentStatus: OrderPaymentStatus.PAID,
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: '$amountPence' },
+          },
+        },
+      ]),
+      // Wins (from Winner model)
+      Winner.countDocuments({ userId }),
+      // Active entries (tickets in live competitions)
+      Ticket.countDocuments({
+        userId,
+        status: TicketStatus.ACTIVE,
+      }),
+      // Competitions entered (distinct competition IDs)
+      Ticket.distinct('competitionId', {
+        userId,
+        status: { $in: [TicketStatus.ACTIVE, TicketStatus.WINNER] },
+      }),
+    ]);
+
+    const totalSpentPence = totalSpentResult[0]?.total || 0;
+    const totalSpent = totalSpentPence / 100;
+
+    res.json(
+      ApiResponse.success(
+        {
+          user: sanitizeUser(user),
+          stats: {
+            totalEntries,
+            totalSpent: parseFloat(totalSpent.toFixed(2)),
+            wins,
+            activeEntries: activeTickets,
+            competitionsEntered: competitionsEntered.length,
+          },
+        },
+        'Profile with statistics retrieved successfully'
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get user's tickets
+ * GET /api/v1/users/me/tickets
+ */
+export const getMyTickets = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    if (!req.user) {
+      throw new ApiError('Not authorized', 401);
+    }
+
+    const userId = req.user._id;
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 20;
+    const { skip, limit: pageLimit } = getPagination(page, limit);
+
+    const query: any = {
+      userId,
+      status: { $in: [TicketStatus.ACTIVE, TicketStatus.WINNER] },
+    };
+
+    if (req.query.competitionId) {
+      query.competitionId = req.query.competitionId;
+    }
+
+    const [tickets, total] = await Promise.all([
+      Ticket.find(query)
+        .populate('competitionId', 'title prize images drawAt status')
+        .populate('orderId', 'orderNumber paymentStatus')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(pageLimit)
+        .lean(),
+      Ticket.countDocuments(query),
+    ]);
+
+    // Group by competition
+    const ticketsByCompetition = tickets.reduce((acc: any, ticket: any) => {
+      const compId = ticket.competitionId?._id?.toString() || 'unknown';
+      if (!acc[compId]) {
+        acc[compId] = {
+          competition: ticket.competitionId || null,
+          tickets: [],
+        };
+      }
+      acc[compId].tickets.push({
+        id: ticket._id,
+        ticketNumber: ticket.ticketNumber,
+        status: ticket.status,
+        orderNumber: ticket.orderId?.orderNumber,
+        paymentStatus: ticket.orderId?.paymentStatus,
+        createdAt: ticket.createdAt,
+      });
+      return acc;
+    }, {});
+
+    res.json(
+      ApiResponse.success(
+        {
+          tickets: Object.values(ticketsByCompetition),
+        },
+        'Tickets retrieved successfully',
+        buildPaginationMeta(page, pageLimit, total)
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get user's orders grouped by status
+ * GET /api/v1/users/me/orders/grouped
+ */
+export const getMyOrdersGrouped = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    if (!req.user) {
+      throw new ApiError('Not authorized', 401);
+    }
+
+    const userId = req.user._id;
+
+    // Get all orders
+    const orders = await Order.find({ userId })
+      .populate('competitionId', 'title prize images')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Group orders
+    const grouped = {
+      pending: {
+        paid: [] as any[],
+        unpaid: [] as any[],
+      },
+      completed: {
+        paid: [] as any[],
+        unpaid: [] as any[],
+      },
+      failed: [] as any[],
+      refunded: [] as any[],
+    };
+
+    orders.forEach((order: any) => {
+      const orderFormatted = {
+        id: order._id,
+        orderNumber: order.orderNumber,
+        competitionId: order.competitionId?._id || order.competitionId,
+        competition: order.competitionId,
+        amountPence: order.amountPence,
+        amountGBP: (order.amountPence / 100).toFixed(2),
+        quantity: order.quantity,
+        status: order.status,
+        paymentStatus: order.paymentStatus,
+        ticketsReserved: order.ticketsReserved,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+      };
+
+      if (order.status === OrderStatus.PENDING) {
+        if (order.paymentStatus === OrderPaymentStatus.PAID) {
+          grouped.pending.paid.push(orderFormatted);
+        } else {
+          grouped.pending.unpaid.push(orderFormatted);
+        }
+      } else if (order.status === OrderStatus.COMPLETED) {
+        if (order.paymentStatus === OrderPaymentStatus.PAID) {
+          grouped.completed.paid.push(orderFormatted);
+        } else {
+          grouped.completed.unpaid.push(orderFormatted);
+        }
+      } else if (order.status === OrderStatus.FAILED) {
+        grouped.failed.push(orderFormatted);
+      } else if (order.status === OrderStatus.REFUNDED) {
+        grouped.refunded.push(orderFormatted);
+      }
+    });
+
+    res.json(
+      ApiResponse.success(
+        {
+          orders: grouped,
+          summary: {
+            total: orders.length,
+            pending: {
+              total: grouped.pending.paid.length + grouped.pending.unpaid.length,
+              paid: grouped.pending.paid.length,
+              unpaid: grouped.pending.unpaid.length,
+            },
+            completed: {
+              total: grouped.completed.paid.length + grouped.completed.unpaid.length,
+              paid: grouped.completed.paid.length,
+              unpaid: grouped.completed.unpaid.length,
+            },
+            failed: grouped.failed.length,
+            refunded: grouped.refunded.length,
+          },
+        },
+        'Orders retrieved and grouped successfully'
       )
     );
   } catch (error) {

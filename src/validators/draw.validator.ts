@@ -27,12 +27,12 @@ export const createDrawSchema = Joi.object({
 });
 
 export const updateDrawSchema = Joi.object({
-  winnerName: Joi.string().trim().optional(),
-  winnerLocation: Joi.string().trim().optional(),
-  drawDate: Joi.date().optional(),
-  totalTickets: Joi.number().integer().min(1).optional(),
-  winningTicketNumber: Joi.number().integer().min(1).optional(),
-  imageUrl: Joi.string().uri().optional(),
-  publicId: Joi.string().optional(),
-  isActive: Joi.boolean().optional(),
+  drawTime: Joi.date().optional(),
+  notes: Joi.string().trim().max(1000).allow('', null).optional(),
+  evidenceUrl: Joi.string().uri().trim().allow('', null).optional(),
+  liveUrl: Joi.string().uri().trim().allow('', null).optional(),
+  urlType: Joi.string()
+    .valid('youtube', 'vimeo', 'twitch', 'custom', 'other')
+    .allow('', null)
+    .optional(),
 });

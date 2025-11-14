@@ -14,7 +14,7 @@ http://localhost:5000/api/v1
 
 ## 🔵 Draws API Endpoints
 
-Draws represent completed competitions with winners. Each draw records the competition details, winner information, and draw execution data.
+Draws represent completed competitions with winners. Each draw records the competition details, winner information, and draw execution data with full audit trail.
 
 ### 1. Get All Draws
 
@@ -27,7 +27,7 @@ Draws represent completed competitions with winners. Each draw records the compe
 - `page` (optional, default: 1) - Page number for pagination
 - `limit` (optional, default: 10) - Number of items per page
 - `competitionId` (optional) - Filter by competition ID
-- `winnerId` (optional) - Filter by winner/user ID
+- `drawMethod` (optional) - Filter by draw method: `automatic`, `admin_triggered`, or `manual`
 
 **Example Request:**
 
@@ -44,75 +44,98 @@ GET http://localhost:5000/api/v1/draws?page=1&limit=10
   "data": {
     "draws": [
       {
-        "_id": "draw_id",
-        "competitionId": "competition_id",
-        "competitionTitle": "£500 ASOS Voucher",
-        "prizeName": "£500 ASOS Voucher",
-        "winnerId": "user_id",
-        "winnerName": "John Smith",
-        "winnerLocation": "London",
-        "drawDate": "2024-11-18T10:30:00.000Z",
-        "drawnAt": "2024-11-18T10:30:15.000Z",
-        "totalTickets": 1799,
-        "winningTicketNumber": 1234,
-        "imageUrl": "https://example.com/draw-image.jpg",
-        "isActive": true,
+        "id": "draw_id",
+        "competitionId": {
+          "_id": "competition_id",
+          "title": "£500 ASOS Voucher",
+          "shortDescription": "Win a £500 ASOS voucher",
+          "description": "Full description...",
+          "prize": "£500 ASOS Voucher",
+          "prizeValue": "£500",
+          "cashAlternative": "£400 cash",
+          "images": [
+            {
+              "url": "https://res.cloudinary.com/.../image.jpg",
+              "publicId": "royal-competitions/..."
+            }
+          ],
+          "category": "Fashion & Watches",
+          "slug": "500-asos-voucher",
+          "status": "drawn",
+          "ticketPricePence": 500,
+          "ticketLimit": 2000,
+          "ticketsSold": 1799,
+          "drawAt": "2024-11-18T10:30:00.000Z",
+          "drawnAt": "2024-11-18T10:30:15.000Z",
+          "startDate": "2024-10-01T00:00:00.000Z",
+          "endDate": "2024-11-18T10:30:00.000Z",
+          "featured": true,
+          "tags": ["fashion", "voucher"]
+        },
+        "competition": {
+          "_id": "competition_id",
+          "title": "£500 ASOS Voucher",
+          "images": [...],
+          "category": "Fashion & Watches",
+          ...
+        },
+        "drawTime": "2024-11-18T10:30:15.000Z",
+        "drawMethod": "automatic",
+        "seed": "a1b2c3d4e5f6...",
+        "algorithm": "hmac-sha256-v1",
+        "snapshotTicketCount": 1799,
+        "result": [
+          {
+            "ticketNumber": 1234,
+            "ticketId": "ticket_id",
+            "userId": "user_id"
+          }
+        ],
+        "initiatedBy": {
+          "_id": "admin_id",
+          "firstName": "Admin",
+          "lastName": "User"
+        },
+        "notes": "Draw completed automatically",
+        "evidenceUrl": "https://example.com/draw-video.mp4",
+        "liveUrl": "https://www.youtube.com/watch?v=...",
+        "urlType": "youtube",
+        "winnersCount": 1,
+        "winners": [
+          {
+            "id": "winner_id",
+            "ticketNumber": 1234,
+            "prize": "£500 ASOS Voucher",
+            "claimed": false,
+            "notified": true,
+            "drawVideoUrl": "https://example.com/draw-video.mp4",
+            "user": {
+              "firstName": "John",
+              "lastName": "Smith"
+            }
+          }
+        ],
         "createdAt": "2024-11-18T10:30:15.000Z",
         "updatedAt": "2024-11-18T10:30:15.000Z"
       }
     ],
-    "total": 50,
-    "page": 1,
-    "pages": 5
+    "pagination": {
+      "page": 1,
+      "limit": 10,
+      "total": 50,
+      "totalPages": 5,
+      "hasNext": true,
+      "hasPrev": false
+    }
   }
 }
 ```
 
----
-
-### 2. Get Recent Draws
-
-**Endpoint:** `GET /draws/recent`
-
-**Access:** Public
-
-**Query Parameters:**
-
-- `limit` (optional, default: 4) - Number of recent draws to retrieve
-
-**Example Request:**
-
-```bash
-GET http://localhost:5000/api/v1/draws/recent?limit=4
-```
-
-**Response:**
-
-```json
-{
-  "success": true,
-  "message": "Recent draws retrieved",
-  "data": {
-    "draws": [
-      {
-        "_id": "draw_id",
-        "winnerName": "John Smith",
-        "winnerLocation": "London",
-        "prizeName": "£500 ASOS Voucher",
-        "drawDate": "2024-11-18T10:30:00.000Z",
-        "drawnAt": "2024-11-18T10:30:15.000Z",
-        "totalTickets": 1799,
-        "winningTicketNumber": 1234,
-        "imageUrl": "https://example.com/draw-image.jpg"
-      }
-    ]
-  }
-}
-```
+**Note:** The response includes full competition data (images, category, etc.) and all winners associated with the draw. Each draw can have multiple winners (primary + reserves).
 
 ---
 
-### 3. Get Single Draw
+### 2. Get Single Draw
 
 **Endpoint:** `GET /draws/:id`
 
@@ -140,25 +163,69 @@ GET http://localhost:5000/api/v1/draws/507f1f77bcf86cd799439011
       "competitionId": {
         "_id": "competition_id",
         "title": "£500 ASOS Voucher",
-        "category": "Fashion & Watches"
+        "prize": "£500 ASOS Voucher",
+        "prizeValue": "£500"
       },
-      "winnerId": {
-        "_id": "user_id",
-        "firstName": "John",
-        "lastName": "Smith",
-        "email": "john@example.com",
-        "phone": "+441234567890"
+      "initiatedBy": {
+        "_id": "admin_id",
+        "firstName": "Admin",
+        "lastName": "User",
+        "email": "admin@example.com"
       },
-      "competitionTitle": "£500 ASOS Voucher",
-      "prizeName": "£500 ASOS Voucher",
-      "winnerName": "John Smith",
-      "winnerLocation": "London",
-      "drawDate": "2024-11-18T10:30:00.000Z",
-      "drawnAt": "2024-11-18T10:30:15.000Z",
-      "totalTickets": 1799,
-      "winningTicketNumber": 1234,
-      "imageUrl": "https://example.com/draw-image.jpg",
-      "isActive": true,
+      "drawTime": "2024-11-18T10:30:15.000Z",
+      "seed": "a1b2c3d4e5f6...",
+      "algorithm": "hmac-sha256-v1",
+      "snapshotTicketCount": 1799,
+      "snapshot": [
+        {
+          "ticketNumber": 1,
+          "ticketId": "ticket_id_1",
+          "userId": "user_id_1"
+        },
+        ...
+      ],
+      "result": [
+        {
+          "ticketNumber": 1234,
+          "ticketId": "ticket_id",
+          "userId": "user_id"
+        }
+      ],
+      "drawMethod": "automatic",
+      "notes": "Draw completed automatically",
+      "evidenceUrl": "https://example.com/draw-video.mp4",
+      "liveUrl": "https://www.youtube.com/watch?v=...",
+      "urlType": "youtube",
+      "winners": [
+        {
+          "_id": "winner_id",
+          "drawId": "draw_id",
+          "competitionId": "competition_id",
+          "ticketId": {
+            "_id": "ticket_id",
+            "ticketNumber": 1234
+          },
+          "userId": {
+            "_id": "user_id",
+            "firstName": "John",
+            "lastName": "Smith",
+            "email": "john@example.com"
+          },
+          "ticketNumber": 1234,
+          "prize": "£500 ASOS Voucher",
+          "notified": true,
+          "claimed": false,
+          "claimCode": "ABC123",
+          "drawVideoUrl": "https://example.com/draw-video.mp4"
+        }
+      ],
+      "audit": {
+        "seed": "a1b2c3d4e5f6...",
+        "algorithm": "hmac-sha256-v1",
+        "snapshotTicketCount": 1799,
+        "snapshot": [...],
+        "result": [...]
+      },
       "createdAt": "2024-11-18T10:30:15.000Z",
       "updatedAt": "2024-11-18T10:30:15.000Z"
     }
@@ -166,61 +233,154 @@ GET http://localhost:5000/api/v1/draws/507f1f77bcf86cd799439011
 }
 ```
 
+**Note:** The single draw endpoint includes full audit information (seed, algorithm, snapshot) for transparency and verification purposes.
+
 ---
 
-### 4. Create Draw
+### 3. Verify Draw
 
-**Endpoint:** `POST /draws`
+**Endpoint:** `GET /draws/:id/verify`
+
+**Access:** Public
+
+**Description:** Verifies the integrity of a draw by checking the seed, algorithm, and snapshot data.
+
+**Path Parameters:**
+
+- `id` (required) - Draw ID
+
+**Example Request:**
+
+```bash
+GET http://localhost:5000/api/v1/draws/507f1f77bcf86cd799439011/verify
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Draw verification passed",
+  "data": {
+    "drawId": "507f1f77bcf86cd799439011",
+    "isValid": true
+  }
+}
+```
+
+---
+
+### 4. Get Competition Draws
+
+**Endpoint:** `GET /competitions/:id/draws`
+
+**Access:** Public
+
+**Description:** Get all draws for a specific competition.
+
+**Path Parameters:**
+
+- `id` (required) - Competition ID
+
+**Example Request:**
+
+```bash
+GET http://localhost:5000/api/v1/competitions/507f1f77bcf86cd799439011/draws
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Draws retrieved successfully",
+  "data": {
+    "draws": [
+      {
+        "_id": "draw_id",
+        "competitionId": "competition_id",
+        "drawTime": "2024-11-18T10:30:15.000Z",
+        "drawMethod": "automatic",
+        "initiatedBy": {
+          "_id": "admin_id",
+          "firstName": "Admin",
+          "lastName": "User"
+        },
+        ...
+      }
+    ],
+    "winners": [
+      {
+        "_id": "winner_id",
+        "drawId": "draw_id",
+        "competitionId": "competition_id",
+        "ticketNumber": 1234,
+        "userId": {
+          "_id": "user_id",
+          "firstName": "John",
+          "lastName": "Smith"
+        },
+        ...
+      }
+    ]
+  }
+}
+```
+
+---
+
+## 🔐 Admin Draw Endpoints
+
+These endpoints are available at `/api/v1/admin/competitions/:id/` and require admin authentication.
+
+### Run Draw (Admin)
+
+**Endpoint:** `POST /api/v1/admin/competitions/:id/run-draw`
 
 **Access:** Private (Admin only)
 
 **Authentication:** Required (cookie-based)
+
+**Path Parameters:**
+
+- `id` (required) - Competition ID
 
 **Request Body:**
 
 ```json
 {
-  "competitionId": "507f1f77bcf86cd799439011",
-  "winnerId": "507f191e810c19729de860ea",
-  "winnerName": "John Smith",
-  "winnerLocation": "London",
-  "totalTickets": 1799,
-  "winningTicketNumber": 1234,
-  "drawDate": "2024-11-18T10:30:00.000Z",
-  "imageUrl": "https://example.com/draw-image.jpg",
-  "publicId": "cloudinary_public_id"
+  "numWinners": 1,
+  "reserveWinners": 3,
+  "liveUrl": "https://www.youtube.com/watch?v=...",
+  "urlType": "youtube",
+  "notes": "Optional notes about the draw"
 }
 ```
 
 **Required Fields:**
 
-- `competitionId` - ID of the completed competition
-- `winnerId` - ID of the winning user
-- `winnerName` - Full name of the winner
-- `winnerLocation` - Location of the winner (e.g., "London", "Dublin")
-- `totalTickets` - Total number of tickets sold (must be ≥ 1)
-- `winningTicketNumber` - The winning ticket number (must be ≥ 1 and ≤ totalTickets)
+- None (all fields are optional with defaults)
 
 **Optional Fields:**
 
-- `drawDate` - Date of the draw (defaults to current date if not provided)
-- `imageUrl` - URL of the draw image
-- `publicId` - Cloudinary public ID for the image
+- `numWinners` (default: 1) - Number of primary winners
+- `reserveWinners` (default: 3) - Number of reserve winners
+- `liveUrl` - URL to watch the draw live (YouTube, Vimeo, etc.)
+- `urlType` - Type of URL: `youtube`, `vimeo`, `twitch`, `custom`, or `other`
+- `notes` - Optional notes about the draw
 
 **Example Request:**
 
 ```bash
-POST http://localhost:5000/api/v1/draws
+POST http://localhost:5000/api/v1/admin/competitions/507f1f77bcf86cd799439011/run-draw
 Content-Type: application/json
 Cookie: authToken=your_token_here
 
 {
-  "competitionId": "507f1f77bcf86cd799439011",
-  "winnerId": "507f191e810c19729de860ea",
-  "winnerName": "John Smith",
-  "winnerLocation": "London",
-  "totalTickets": 1799,
-  "winningTicketNumber": 1234
+  "numWinners": 1,
+  "reserveWinners": 3,
+  "liveUrl": "https://www.youtube.com/watch?v=abc123",
+  "urlType": "youtube"
 }
 ```
 
@@ -229,34 +389,46 @@ Cookie: authToken=your_token_here
 ```json
 {
   "success": true,
-  "message": "Draw created successfully",
+  "message": "Draw completed successfully",
   "data": {
     "draw": {
-      "_id": "new_draw_id",
-      "competitionId": "507f1f77bcf86cd799439011",
-      "competitionTitle": "£500 ASOS Voucher",
-      "prizeName": "£500 ASOS Voucher",
-      "winnerId": "507f191e810c19729de860ea",
-      "winnerName": "John Smith",
-      "winnerLocation": "London",
-      "drawDate": "2024-11-18T10:30:00.000Z",
-      "drawnAt": "2024-11-18T10:30:15.000Z",
-      "totalTickets": 1799,
-      "winningTicketNumber": 1234,
-      "isActive": true,
-      "createdAt": "2024-11-18T10:30:15.000Z"
+      "id": "draw_id",
+      "competitionId": "competition_id",
+      "drawTime": "2024-11-18T10:30:15.000Z",
+      "seed": "a1b2c3d4e5f6...",
+      "algorithm": "hmac-sha256-v1",
+      "snapshotTicketCount": 1799,
+      "result": [
+        {
+          "ticketNumber": 1234,
+          "ticketId": "ticket_id",
+          "userId": "user_id"
+        }
+      ],
+      "winners": [
+        {
+          "id": "winner_id",
+          "ticketNumber": 1234,
+          "claimCode": "ABC123",
+          "notified": true
+        }
+      ]
     }
   }
 }
 ```
 
-**Note:** Creating a draw automatically updates the competition status to `completed` and sets the winner.
+**Note:** 
+- This endpoint automatically closes the competition if it's still `live`
+- Primary winners are automatically notified via email
+- The competition status is updated to `drawn`
+- Draws are created with full audit trail (seed, algorithm, snapshot)
 
 ---
 
-### 5. Update Draw
+### Add Manual Winner (Admin)
 
-**Endpoint:** `PUT /draws/:id`
+**Endpoint:** `POST /api/v1/admin/competitions/:id/add-winner`
 
 **Access:** Private (Admin only)
 
@@ -264,33 +436,44 @@ Cookie: authToken=your_token_here
 
 **Path Parameters:**
 
-- `id` (required) - Draw ID
+- `id` (required) - Competition ID
 
-**Request Body:** (All fields optional)
+**Request Body:**
 
 ```json
 {
-  "winnerName": "Jane Doe",
-  "winnerLocation": "Dublin",
-  "drawDate": "2024-11-18T10:30:00.000Z",
-  "totalTickets": 2000,
-  "winningTicketNumber": 1500,
-  "imageUrl": "https://example.com/new-image.jpg",
-  "publicId": "new_cloudinary_id",
-  "isActive": true
+  "ticketNumber": 1234,
+  "notes": "Manual winner entry",
+  "evidenceUrl": "https://example.com/draw-video.mp4",
+  "liveUrl": "https://www.youtube.com/watch?v=...",
+  "urlType": "youtube"
 }
 ```
+
+**Required Fields:**
+
+- `ticketNumber` - The winning ticket number
+
+**Optional Fields:**
+
+- `notes` - Notes about the manual entry
+- `evidenceUrl` - URL to draw video/evidence
+- `liveUrl` - URL to watch the draw live
+- `urlType` - Type of URL: `youtube`, `vimeo`, `twitch`, `custom`, or `other`
 
 **Example Request:**
 
 ```bash
-PUT http://localhost:5000/api/v1/draws/507f1f77bcf86cd799439011
+POST http://localhost:5000/api/v1/admin/competitions/507f1f77bcf86cd799439011/add-winner
 Content-Type: application/json
 Cookie: authToken=your_token_here
 
 {
-  "winnerName": "Jane Doe",
-  "winnerLocation": "Dublin"
+  "ticketNumber": 1234,
+  "notes": "Winner selected manually",
+  "evidenceUrl": "https://example.com/draw-video.mp4",
+  "liveUrl": "https://www.youtube.com/watch?v=abc123",
+  "urlType": "youtube"
 }
 ```
 
@@ -299,50 +482,34 @@ Cookie: authToken=your_token_here
 ```json
 {
   "success": true,
-  "message": "Draw updated successfully",
+  "message": "Manual winner added successfully",
   "data": {
     "draw": {
-      "_id": "draw_id",
-      "winnerName": "Jane Doe",
-      "winnerLocation": "Dublin",
-      ...
+      "id": "draw_id",
+      "competitionId": "competition_id",
+      "drawTime": "2024-11-18T10:30:15.000Z",
+      "drawMethod": "manual",
+      "result": [
+        {
+          "ticketNumber": 1234,
+          "ticketId": "ticket_id",
+          "userId": "user_id"
+        }
+      ]
+    },
+    "winner": {
+      "id": "winner_id",
+      "ticketNumber": 1234,
+      "claimCode": "ABC123"
     }
   }
 }
 ```
 
----
-
-### 6. Delete Draw
-
-**Endpoint:** `DELETE /draws/:id`
-
-**Access:** Private (Admin only)
-
-**Authentication:** Required (cookie-based)
-
-**Path Parameters:**
-
-- `id` (required) - Draw ID
-
-**Example Request:**
-
-```bash
-DELETE http://localhost:5000/api/v1/draws/507f1f77bcf86cd799439011
-Cookie: authToken=your_token_here
-```
-
-**Response:**
-
-```json
-{
-  "success": true,
-  "message": "Draw deleted successfully",
-  "data": null
-}
-```
-
-**Note:** This performs a soft delete (sets `isActive` to `false`), so the draw data is preserved but hidden from public endpoints.
+**Note:**
+- This creates a manual draw record with a single winner
+- The winner is automatically notified if they have an email
+- The competition status is updated to `drawn`
 
 ---
 
@@ -807,20 +974,34 @@ const createChampion = async (formData) => {
 
 ## 🔄 Typical Workflow
 
-### Creating a Draw and Champion
+### Running a Draw and Creating a Champion
 
-1. **Complete a competition** (usually done automatically when competition ends)
-2. **Create a Draw:**
+1. **Competition ends** (status changes to `closed` or `live`)
+2. **Run a Draw** (Admin):
 
+   **Automatic Draw:**
+   - Draws run automatically if competition has `drawMode: 'automatic'`
+   - No admin action required
+
+   **Admin-Triggered Draw:**
    ```bash
-   POST /api/v1/draws
+   POST /api/v1/admin/competitions/:id/run-draw
    {
-     "competitionId": "...",
-     "winnerId": "...",
-     "winnerName": "John Smith",
-     "winnerLocation": "London",
-     "totalTickets": 1799,
-     "winningTicketNumber": 1234
+     "numWinners": 1,
+     "reserveWinners": 3,
+     "liveUrl": "https://www.youtube.com/watch?v=...",
+     "urlType": "youtube"
+   }
+   ```
+
+   **Manual Winner Entry:**
+   ```bash
+   POST /api/v1/admin/competitions/:id/add-winner
+   {
+     "ticketNumber": 1234,
+     "evidenceUrl": "https://example.com/draw-video.mp4",
+     "liveUrl": "https://www.youtube.com/watch?v=...",
+     "urlType": "youtube"
    }
    ```
 
@@ -836,10 +1017,16 @@ const createChampion = async (formData) => {
 
 ### Querying Draws and Champions
 
-**Get recent draws for homepage:**
+**Get all draws with pagination:**
 
 ```bash
-GET /api/v1/draws/recent?limit=4
+GET /api/v1/draws?page=1&limit=10
+```
+
+**Get draws for a specific competition:**
+
+```bash
+GET /api/v1/competitions/:id/draws
 ```
 
 **Get featured champions for carousel:**
@@ -860,8 +1047,10 @@ GET /api/v1/champions?search=London&featured=true
 
 ### Draw Relationships:
 
-- **competitionId** → Competition (one-to-one)
-- **winnerId** → User (one-to-one)
+- **competitionId** → Competition (one-to-many: one competition can have multiple draws)
+- **initiatedBy** → User (one-to-one: admin who triggered the draw)
+- **result** → Array of winners (one-to-many: primary + reserves)
+- **winners** → Winner records (one-to-many: linked via `drawId`)
 
 ### Champion Relationships:
 
@@ -871,10 +1060,23 @@ GET /api/v1/champions?search=London&featured=true
 
 ### Population:
 
-All endpoints automatically populate related documents when fetching single items:
+All endpoints automatically populate related documents:
 
-- Draws populate `competitionId` and `winnerId`
-- Champions populate `drawId`, `competitionId`, and `winnerId`
+- **Draws** populate:
+  - `competitionId` - Full competition data (title, images, category, etc.)
+  - `initiatedBy` - Admin user who triggered the draw
+  - `winners` - All winner records with user and ticket data
+
+- **Champions** populate:
+  - `drawId` - Draw information
+  - `competitionId` - Competition details
+  - `winnerId` - Winner user information
+
+### Draw Methods:
+
+- **`automatic`** - Draw runs automatically when competition ends
+- **`admin_triggered`** - Admin manually triggers the draw
+- **`manual`** - Admin manually enters a winner (for special cases)
 
 ---
 
@@ -883,7 +1085,7 @@ All endpoints automatically populate related documents when fetching single item
 ### Draw Filters:
 
 - Filter by `competitionId` - Get all draws for a specific competition
-- Filter by `winnerId` - Get all draws won by a specific user
+- Filter by `drawMethod` - Filter by draw method: `automatic`, `admin_triggered`, or `manual`
 
 ### Champion Filters:
 
@@ -892,13 +1094,15 @@ All endpoints automatically populate related documents when fetching single item
 
 ---
 
-## 📸 Image Handling
+## 📸 Image & Video Handling
 
-### Draw Images:
+### Draw Images & Videos:
 
-- Optional image URL can be provided when creating/updating
-- Stored as `imageUrl` and `publicId` fields
-- No automatic Cloudinary upload for draws
+- Draws include full competition data with images
+- `evidenceUrl` - URL to draw video/evidence (for manual draws)
+- `liveUrl` - URL to watch the draw live (YouTube, Vimeo, Twitch, etc.)
+- `urlType` - Helps frontend render the URL correctly: `youtube`, `vimeo`, `twitch`, `custom`, or `other`
+- Competition images are automatically included in draw responses
 
 ### Champion Images:
 
@@ -912,9 +1116,10 @@ All endpoints automatically populate related documents when fetching single item
 ## ⚡ Performance Tips
 
 1. **Use pagination** - Always paginate list endpoints to improve performance
-2. **Use specific endpoints** - Use `/draws/recent` and `/champions/featured` instead of filtering all records
-3. **Limit fields** - List endpoints return essential fields only; use single item endpoints for full details
-4. **Cache featured data** - Featured champions/draws can be cached as they change infrequently
+2. **Use specific endpoints** - Use `/competitions/:id/draws` to get draws for a specific competition
+3. **Filter by drawMethod** - Filter draws by method (`automatic`, `admin_triggered`, `manual`) when needed
+4. **Cache featured data** - Featured champions can be cached as they change infrequently
+5. **Full competition data** - Draw endpoints return full competition data including images, so no need for separate competition API calls
 
 ---
 
@@ -925,9 +1130,9 @@ All endpoints automatically populate related documents when fetching single item
 **Get all draws:**
 
 ```typescript
-const getDraws = async () => {
+const getDraws = async (page = 1, limit = 10) => {
   const response = await fetch(
-    'http://localhost:5000/api/v1/draws?page=1&limit=10',
+    `http://localhost:5000/api/v1/draws?page=${page}&limit=${limit}`,
     {
       credentials: 'include',
     }
@@ -937,18 +1142,67 @@ const getDraws = async () => {
 };
 ```
 
-**Create a draw:**
+**Get draws for a competition:**
 
 ```typescript
-const createDraw = async (drawData: any) => {
-  const response = await fetch('http://localhost:5000/api/v1/draws', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    credentials: 'include',
-    body: JSON.stringify(drawData),
-  });
+const getCompetitionDraws = async (competitionId: string) => {
+  const response = await fetch(
+    `http://localhost:5000/api/v1/competitions/${competitionId}/draws`,
+    {
+      credentials: 'include',
+    }
+  );
+  const data = await response.json();
+  return data;
+};
+```
+
+**Run a draw (Admin):**
+
+```typescript
+const runDraw = async (competitionId: string, drawData: any) => {
+  const response = await fetch(
+    `http://localhost:5000/api/v1/admin/competitions/${competitionId}/run-draw`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({
+        numWinners: 1,
+        reserveWinners: 3,
+        liveUrl: drawData.liveUrl,
+        urlType: drawData.urlType,
+        notes: drawData.notes,
+      }),
+    }
+  );
+  return await response.json();
+};
+```
+
+**Add manual winner (Admin):**
+
+```typescript
+const addManualWinner = async (competitionId: string, ticketNumber: number, options?: any) => {
+  const response = await fetch(
+    `http://localhost:5000/api/v1/admin/competitions/${competitionId}/add-winner`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({
+        ticketNumber,
+        notes: options?.notes,
+        evidenceUrl: options?.evidenceUrl,
+        liveUrl: options?.liveUrl,
+        urlType: options?.urlType,
+      }),
+    }
+  );
   return await response.json();
 };
 ```

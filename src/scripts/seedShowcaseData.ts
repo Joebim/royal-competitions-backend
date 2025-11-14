@@ -1,9 +1,20 @@
 import mongoose from 'mongoose';
 import { connectDatabase } from '../config/database';
-import { Champion, Competition, Draw, User, UserRole } from '../models';
-import { CompetitionStatus } from '../models/Competition.model';
+import {
+  Champion,
+  Competition,
+  Draw,
+  User,
+  UserRole,
+  Winner,
+  Ticket,
+  TicketStatus,
+} from '../models';
+import { CompetitionStatus, DrawMode } from '../models/Competition.model';
+import { DrawMethod } from '../models/Draw.model';
 import logger from '../utils/logger';
 import { slugify } from '../utils/slugify';
+import drawService from '../services/draw.service';
 
 const ensureUser = async (
   email: string,
@@ -40,21 +51,18 @@ const competitionsSeed = [
     description:
       'Aston Martin’s DB11 V12 Coupe delivers a breathtaking blend of performance and craftsmanship. The prize includes concierge handover, 12-month manufacturer guarantee, and tailored insurance guidance.',
     prize: 'Aston Martin DB11 V12 Coupe',
-    prizeValue: 18500000,
-    cashAlternative: 16500000,
-    ticketPrice: 395,
-    maxTickets: 45000,
-    soldTickets: 28930,
-    status: CompetitionStatus.ACTIVE,
+    prizeValue: 18500000, // £185,000 in pence
+    cashAlternative: 16500000, // £165,000 in pence
+    ticketPricePence: 39500, // £395 in pence
+    ticketLimit: 45000,
+    ticketsSold: 28930,
+    status: CompetitionStatus.LIVE,
     category: 'Luxury Cars',
     featured: true,
-    question: {
-      question: 'Which country is Aston Martin originally from?',
-      options: ['United Kingdom', 'Germany', 'Sweden'],
-      correctAnswer: 'United Kingdom',
-      explanation: 'Aston Martin was founded in London in 1913.',
-    },
-    drawDate: new Date('2026-12-18T21:30:00Z'),
+    drawMode: DrawMode.AUTOMATIC,
+    drawAt: new Date('2026-12-18T21:30:00Z'),
+    freeEntryEnabled: false,
+    nextTicketNumber: 28931,
     startDate: new Date('2026-11-05T09:00:00Z'),
     endDate: new Date('2026-12-18T17:30:00Z'),
     features: [
@@ -79,7 +87,14 @@ const competitionsSeed = [
         publicId: 'seed/luxury/lux_car_01_cxgrpg',
       },
     ],
-    isGuaranteedDraw: true,
+    question: {
+      question: 'What is the displacement of the Aston Martin DB11 V12 engine?',
+      options: ['4.0L', '5.2L', '6.0L', '6.75L'],
+      answerOptions: ['4.0L', '5.2L', '6.0L', '6.75L'],
+      correctAnswer: '5.2L',
+      explanation:
+        'The Aston Martin DB11 V12 features a twin-turbocharged 5.2L V12 engine.',
+    },
   },
   {
     title: 'Lamborghini Huracán EVO Spyder',
@@ -88,20 +103,18 @@ const competitionsSeed = [
     description:
       'Drop the roof and feel the 640 hp V10. This Huracán EVO Spyder arrives with lifestyle handover, track-experience voucher, and a bespoke cover to protect the supercar at home.',
     prize: 'Lamborghini Huracán EVO Spyder',
-    prizeValue: 22500000,
-    cashAlternative: 20000000,
-    ticketPrice: 425,
-    maxTickets: 52000,
-    soldTickets: 31210,
-    status: CompetitionStatus.ACTIVE,
+    prizeValue: 22500000, // £225,000 in pence
+    cashAlternative: 20000000, // £200,000 in pence
+    ticketPricePence: 42500, // £425 in pence
+    ticketLimit: 52000,
+    ticketsSold: 31210,
+    status: CompetitionStatus.LIVE,
     category: 'Luxury Cars',
     featured: true,
-    question: {
-      question: 'Which company owns Lamborghini?',
-      options: ['Volkswagen Group', 'Tata Group', 'Stellantis'],
-      correctAnswer: 'Volkswagen Group',
-    },
-    drawDate: new Date('2027-01-05T21:00:00Z'),
+    drawMode: DrawMode.AUTOMATIC,
+    drawAt: new Date('2027-01-05T21:00:00Z'),
+    freeEntryEnabled: false,
+    nextTicketNumber: 31211,
     startDate: new Date('2026-11-20T09:00:00Z'),
     endDate: new Date('2027-01-05T17:00:00Z'),
     features: [
@@ -126,7 +139,14 @@ const competitionsSeed = [
         publicId: 'seed/luxury/lux_car_02_m5azqh',
       },
     ],
-    isGuaranteedDraw: true,
+    question: {
+      question: 'Which Italian city is Lamborghini headquartered in?',
+      options: ['Milan', 'Bologna', 'Turin', 'Modena'],
+      answerOptions: ['Milan', 'Bologna', 'Turin', 'Modena'],
+      correctAnswer: 'Bologna',
+      explanation:
+        "Lamborghini is headquartered in Sant'Agata Bolognese, near Bologna, Italy.",
+    },
   },
   {
     title: 'Ferrari F8 Tributo Rosso Corsa',
@@ -135,20 +155,18 @@ const competitionsSeed = [
     description:
       'Ferrari F8 Tributo with carbon driver zone, forged wheels and Scuderia shields. Includes factory tour in Maranello for two and a masterclass with Ferrari’s Driver Academy.',
     prize: 'Ferrari F8 Tributo',
-    prizeValue: 23800000,
-    cashAlternative: 21000000,
-    ticketPrice: 445,
-    maxTickets: 55000,
-    soldTickets: 37220,
-    status: CompetitionStatus.ACTIVE,
+    prizeValue: 23800000, // £238,000 in pence
+    cashAlternative: 21000000, // £210,000 in pence
+    ticketPricePence: 44500, // £445 in pence
+    ticketLimit: 55000,
+    ticketsSold: 37220,
+    status: CompetitionStatus.LIVE,
     category: 'Luxury Cars',
     featured: true,
-    question: {
-      question: 'What does the prancing horse logo represent?',
-      options: ['Ferrari', 'Porsche', 'Lancia'],
-      correctAnswer: 'Ferrari',
-    },
-    drawDate: new Date('2027-01-20T20:30:00Z'),
+    drawMode: DrawMode.AUTOMATIC,
+    drawAt: new Date('2027-01-20T20:30:00Z'),
+    freeEntryEnabled: false,
+    nextTicketNumber: 37221,
     startDate: new Date('2026-12-05T10:00:00Z'),
     endDate: new Date('2027-01-20T18:00:00Z'),
     features: [
@@ -173,7 +191,24 @@ const competitionsSeed = [
         publicId: 'seed/luxury/lux_car_03_matjwg',
       },
     ],
-    isGuaranteedDraw: false,
+    question: {
+      question: 'What does the "F8" in Ferrari F8 Tributo stand for?',
+      options: [
+        'Formula 8',
+        'Ferrari 8-cylinder',
+        'Ferrari 8th generation',
+        'It represents 8 cylinders',
+      ],
+      answerOptions: [
+        'Formula 8',
+        'Ferrari 8-cylinder',
+        'Ferrari 8th generation',
+        'It represents 8 cylinders',
+      ],
+      correctAnswer: 'It represents 8 cylinders',
+      explanation:
+        'The F8 Tributo name celebrates the 8-cylinder engine, which has been a Ferrari hallmark for over 70 years.',
+    },
   },
   {
     title: 'Bentley Continental GT Speed',
@@ -182,20 +217,18 @@ const competitionsSeed = [
     description:
       'The Bentley Continental GT Speed combines effortless W12 power with Mulliner craftsmanship. Complimentary chauffeur experience and bespoke luggage set included.',
     prize: 'Bentley Continental GT Speed',
-    prizeValue: 21000000,
-    cashAlternative: 19000000,
-    ticketPrice: 365,
-    maxTickets: 43000,
-    soldTickets: 23350,
-    status: CompetitionStatus.ACTIVE,
+    prizeValue: 21000000, // £210,000 in pence
+    cashAlternative: 19000000, // £190,000 in pence
+    ticketPricePence: 36500, // £365 in pence
+    ticketLimit: 43000,
+    ticketsSold: 23350,
+    status: CompetitionStatus.LIVE,
     category: 'Luxury Cars',
     featured: false,
-    question: {
-      question: 'Bentley was founded in which year?',
-      options: ['1919', '1931', '1950'],
-      correctAnswer: '1919',
-    },
-    drawDate: new Date('2026-12-12T20:00:00Z'),
+    drawMode: DrawMode.AUTOMATIC,
+    drawAt: new Date('2026-12-12T20:00:00Z'),
+    freeEntryEnabled: false,
+    nextTicketNumber: 23351,
     startDate: new Date('2026-10-28T09:00:00Z'),
     endDate: new Date('2026-12-12T16:00:00Z'),
     features: [
@@ -220,7 +253,15 @@ const competitionsSeed = [
         publicId: 'seed/luxury/lux_car_04_wkkanx',
       },
     ],
-    isGuaranteedDraw: true,
+    question: {
+      question:
+        'What type of engine configuration does the Bentley Continental GT Speed use?',
+      options: ['V8', 'V10', 'V12', 'W12'],
+      answerOptions: ['V8', 'V10', 'V12', 'W12'],
+      correctAnswer: 'W12',
+      explanation:
+        'The Bentley Continental GT Speed features a 6.0L twin-turbocharged W12 engine.',
+    },
   },
   {
     title: 'Rolls-Royce Cullinan Black Badge',
@@ -229,20 +270,18 @@ const competitionsSeed = [
     description:
       'Rolls-Royce Cullinan Black Badge, featuring bespoke Starlight headliner, immersive rear theatre, and artisan picnic hampers. Includes VIP chauffeur induction.',
     prize: 'Rolls-Royce Cullinan Black Badge',
-    prizeValue: 32500000,
-    cashAlternative: 29500000,
-    ticketPrice: 485,
-    maxTickets: 60000,
-    soldTickets: 40890,
-    status: CompetitionStatus.ACTIVE,
+    prizeValue: 32500000, // £325,000 in pence
+    cashAlternative: 29500000, // £295,000 in pence
+    ticketPricePence: 48500, // £485 in pence
+    ticketLimit: 60000,
+    ticketsSold: 40890,
+    status: CompetitionStatus.LIVE,
     category: 'Luxury Cars',
     featured: true,
-    question: {
-      question: 'Which feature is unique to Rolls-Royce interiors?',
-      options: ['Starlight Headliner', 'Ambient Cupholders', 'Gold Pedals'],
-      correctAnswer: 'Starlight Headliner',
-    },
-    drawDate: new Date('2027-02-02T21:30:00Z'),
+    drawMode: DrawMode.AUTOMATIC,
+    drawAt: new Date('2027-02-02T21:30:00Z'),
+    freeEntryEnabled: false,
+    nextTicketNumber: 40891,
     startDate: new Date('2026-12-15T10:00:00Z'),
     endDate: new Date('2027-02-02T18:30:00Z'),
     features: [
@@ -267,7 +306,25 @@ const competitionsSeed = [
         publicId: 'seed/luxury/lux_car_05_nhkus5',
       },
     ],
-    isGuaranteedDraw: false,
+    question: {
+      question:
+        "What is the name of Rolls-Royce's signature feature that creates a starry sky effect in the ceiling?",
+      options: [
+        'Starlight Headliner',
+        'Celestial Roof',
+        'Starry Night',
+        'Galaxy Ceiling',
+      ],
+      answerOptions: [
+        'Starlight Headliner',
+        'Celestial Roof',
+        'Starry Night',
+        'Galaxy Ceiling',
+      ],
+      correctAnswer: 'Starlight Headliner',
+      explanation:
+        "The Starlight Headliner is a Rolls-Royce signature feature that uses fiber-optic lights to create a starry sky effect in the vehicle's ceiling.",
+    },
   },
   {
     title: 'Porsche 911 Turbo S Cabriolet',
@@ -277,20 +334,18 @@ const competitionsSeed = [
     description:
       'The Porsche 911 Turbo S Cabriolet blends blistering acceleration with everyday usability. Includes Porsche Experience Centre track day and specialist detailing package.',
     prize: 'Porsche 911 Turbo S Cabriolet',
-    prizeValue: 19800000,
-    cashAlternative: 17500000,
-    ticketPrice: 355,
-    maxTickets: 42000,
-    soldTickets: 18760,
-    status: CompetitionStatus.ACTIVE,
+    prizeValue: 19800000, // £198,000 in pence
+    cashAlternative: 17500000, // £175,000 in pence
+    ticketPricePence: 35500, // £355 in pence
+    ticketLimit: 42000,
+    ticketsSold: 18760,
+    status: CompetitionStatus.LIVE,
     category: 'Luxury Cars',
     featured: false,
-    question: {
-      question: 'What is Porsche’s iconic sports car model?',
-      options: ['911', '718', 'Panamera'],
-      correctAnswer: '911',
-    },
-    drawDate: new Date('2026-12-08T19:30:00Z'),
+    drawMode: DrawMode.AUTOMATIC,
+    drawAt: new Date('2026-12-08T19:30:00Z'),
+    freeEntryEnabled: false,
+    nextTicketNumber: 18761,
     startDate: new Date('2026-10-15T09:00:00Z'),
     endDate: new Date('2026-12-08T16:30:00Z'),
     features: [
@@ -315,7 +370,24 @@ const competitionsSeed = [
         publicId: 'seed/luxury/lux_car_06_l2gwso',
       },
     ],
-    isGuaranteedDraw: true,
+    question: {
+      question: 'What does "PDK" stand for in Porsche transmissions?',
+      options: [
+        'Porsche Dual Clutch',
+        'Porsche Direct Kinematic',
+        'Porsche Doppelkupplung',
+        'Porsche Dynamic Kinetic',
+      ],
+      answerOptions: [
+        'Porsche Dual Clutch',
+        'Porsche Direct Kinematic',
+        'Porsche Doppelkupplung',
+        'Porsche Dynamic Kinetic',
+      ],
+      correctAnswer: 'Porsche Doppelkupplung',
+      explanation:
+        'PDK stands for Porsche Doppelkupplung, which is German for "double clutch" - Porsche\'s dual-clutch transmission system.',
+    },
   },
   {
     title: 'McLaren 720S Performance Pack',
@@ -325,20 +397,18 @@ const competitionsSeed = [
     description:
       'McLaren 720S with Performance Pack featuring Senna lightweight seats, track telemetry, and stealth finish. Includes two-day Silverstone GP tuition.',
     prize: 'McLaren 720S Performance Pack',
-    prizeValue: 23500000,
-    cashAlternative: 21000000,
-    ticketPrice: 405,
-    maxTickets: 54000,
-    soldTickets: 27845,
+    prizeValue: 23500000, // £235,000 in pence
+    cashAlternative: 21000000, // £210,000 in pence
+    ticketPricePence: 40500, // £405 in pence
+    ticketLimit: 54000,
+    ticketsSold: 27845,
     status: CompetitionStatus.DRAFT,
     category: 'Luxury Cars',
     featured: false,
-    question: {
-      question: 'McLaren Automotive is headquartered in which UK town?',
-      options: ['Woking', 'Gaydon', 'Hethel'],
-      correctAnswer: 'Woking',
-    },
-    drawDate: new Date('2027-03-10T21:00:00Z'),
+    drawMode: DrawMode.AUTOMATIC,
+    drawAt: new Date('2027-03-10T21:00:00Z'),
+    freeEntryEnabled: false,
+    nextTicketNumber: 27846,
     startDate: new Date('2027-01-15T09:00:00Z'),
     endDate: new Date('2027-03-10T18:00:00Z'),
     features: [
@@ -363,7 +433,20 @@ const competitionsSeed = [
         publicId: 'seed/luxury/lux_car_09_uulg3q',
       },
     ],
-    isGuaranteedDraw: false,
+    question: {
+      question:
+        'Which Formula 1 driver is the McLaren 720S Performance Pack named after?',
+      options: ['Lewis Hamilton', 'Ayrton Senna', 'Alain Prost', 'Niki Lauda'],
+      answerOptions: [
+        'Lewis Hamilton',
+        'Ayrton Senna',
+        'Alain Prost',
+        'Niki Lauda',
+      ],
+      correctAnswer: 'Ayrton Senna',
+      explanation:
+        'The McLaren 720S Performance Pack features Senna lightweight seats, named after the legendary Formula 1 driver Ayrton Senna.',
+    },
   },
   {
     title: 'Mercedes-AMG GT R Pro',
@@ -373,20 +456,18 @@ const competitionsSeed = [
     description:
       'The Mercedes-AMG GT R Pro is bred on the Nürburgring. This example includes AMG Track Pack harnesses, carbon ceramics, and complimentary AMG Driving Academy Master program.',
     prize: 'Mercedes-AMG GT R Pro',
-    prizeValue: 18000000,
-    cashAlternative: 16000000,
-    ticketPrice: 325,
-    maxTickets: 39000,
-    soldTickets: 14050,
-    status: CompetitionStatus.ACTIVE,
+    prizeValue: 18000000, // £180,000 in pence
+    cashAlternative: 16000000, // £160,000 in pence
+    ticketPricePence: 32500, // £325 in pence
+    ticketLimit: 39000,
+    ticketsSold: 14050,
+    status: CompetitionStatus.LIVE,
     category: 'Luxury Cars',
     featured: false,
-    question: {
-      question: 'AMG originally stood for Aufrecht, Melcher and which town?',
-      options: ['Grossaspach', 'Ingolstadt', 'Affalterbach'],
-      correctAnswer: 'Grossaspach',
-    },
-    drawDate: new Date('2026-12-02T19:00:00Z'),
+    drawMode: DrawMode.AUTOMATIC,
+    drawAt: new Date('2026-12-02T19:00:00Z'),
+    freeEntryEnabled: false,
+    nextTicketNumber: 14051,
     startDate: new Date('2026-10-05T09:00:00Z'),
     endDate: new Date('2026-12-02T16:00:00Z'),
     features: [
@@ -411,7 +492,20 @@ const competitionsSeed = [
         publicId: 'seed/luxury/lux_car_10_fvcazy',
       },
     ],
-    isGuaranteedDraw: true,
+    question: {
+      question:
+        'Which famous race track is the Mercedes-AMG GT R Pro "bred on" according to its description?',
+      options: ['Silverstone', 'Monaco', 'Nürburgring', 'Spa-Francorchamps'],
+      answerOptions: [
+        'Silverstone',
+        'Monaco',
+        'Nürburgring',
+        'Spa-Francorchamps',
+      ],
+      correctAnswer: 'Nürburgring',
+      explanation:
+        'The Mercedes-AMG GT R Pro is bred on the Nürburgring, one of the most challenging race tracks in the world.',
+    },
   },
 ];
 
@@ -649,6 +743,7 @@ const seedShowcaseData = async () => {
     );
 
     const drawDocs = [];
+    const winnerLocationMap = new Map<string, string>(); // Map competition slug to winner location
     for (const drawSeed of drawsSeed) {
       const competition = competitionMap.get(drawSeed.competitionSlug);
 
@@ -661,49 +756,229 @@ const seedShowcaseData = async () => {
 
       const competitionId = competition._id as mongoose.Types.ObjectId;
 
+      // Store winner location for later use in champion creation
+      winnerLocationMap.set(
+        drawSeed.competitionSlug,
+        drawSeed.winner.location || 'UK'
+      );
+
       const winnerUser = await ensureUser(drawSeed.winner.email, {
         firstName: drawSeed.winner.firstName,
         lastName: drawSeed.winner.lastName,
       });
 
+      // Check if draw already exists (by drawTime matching drawDate)
       const existingDraw = await Draw.findOne({
         competitionId,
-        drawDate: drawSeed.drawDate,
+        drawTime: drawSeed.drawDate,
       });
 
       if (existingDraw) {
         logger.info(`Draw already exists for competition ${competition.title}`);
+
+        // Check if winner exists for this draw
+        const existingWinner = await Winner.findOne({
+          drawId: existingDraw._id,
+        });
+
+        if (!existingWinner) {
+          // Draw exists but no winner, create the winner
+          logger.info(
+            `Creating winner for existing draw: ${competition.title}`
+          );
+
+          // Get or create winning ticket
+          let ticketId: mongoose.Types.ObjectId;
+          const winningTicket = await Ticket.findOne({
+            competitionId,
+            ticketNumber: drawSeed.winningTicketNumber,
+          });
+
+          if (!winningTicket) {
+            const newTicket = await Ticket.create({
+              competitionId,
+              ticketNumber: drawSeed.winningTicketNumber,
+              userId: winnerUser._id,
+              status: TicketStatus.ACTIVE,
+            });
+            ticketId = newTicket._id as mongoose.Types.ObjectId;
+          } else {
+            ticketId = winningTicket._id as mongoose.Types.ObjectId;
+            if (winningTicket.status !== TicketStatus.ACTIVE) {
+              winningTicket.status = TicketStatus.ACTIVE;
+              winningTicket.userId = winnerUser._id as mongoose.Types.ObjectId;
+              await winningTicket.save();
+            }
+          }
+
+          // Generate claim code
+          const generateClaimCode = () => {
+            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            const part1 = Array.from({ length: 4 }, () =>
+              chars.charAt(Math.floor(Math.random() * chars.length))
+            ).join('');
+            const part2 = Array.from({ length: 4 }, () =>
+              chars.charAt(Math.floor(Math.random() * chars.length))
+            ).join('');
+            return `${part1}-${part2}`;
+          };
+
+          // Create winner for existing draw
+          await Winner.create({
+            drawId: existingDraw._id,
+            competitionId,
+            ticketId,
+            userId: winnerUser._id as mongoose.Types.ObjectId,
+            ticketNumber: drawSeed.winningTicketNumber,
+            prize: competition.prize,
+            notified: false,
+            claimed: false,
+            claimCode: generateClaimCode(),
+            proofImageUrl: drawSeed.imageUrl,
+            drawVideoUrl: drawSeed.imageUrl,
+          });
+
+          // Mark ticket as winner
+          const ticket = await Ticket.findById(ticketId);
+          if (ticket) {
+            ticket.status = TicketStatus.WINNER;
+            await ticket.save();
+          }
+
+          logger.info(
+            `Winner created for existing draw: ${competition.title} (winner: ${winnerUser.firstName} ${winnerUser.lastName})`
+          );
+        } else {
+          logger.info(`Winner already exists for draw: ${competition.title}`);
+        }
+
         drawDocs.push(existingDraw);
         continue;
       }
 
-      const draw = await Draw.create({
+      // Create tickets for the draw (simplified - create winning ticket)
+      // In a real scenario, you'd create all tickets, but for seeding we'll just create the winning ticket
+      const winningTicket = await Ticket.findOne({
         competitionId,
-        competitionTitle: competition.title,
-        prizeName: competition.prize,
-        prizeValue: competition.prizeValue,
-        winnerId: winnerUser._id as mongoose.Types.ObjectId,
-        winnerName: `${winnerUser.firstName} ${winnerUser.lastName}`,
-        winnerLocation: drawSeed.winner.location,
-        drawDate: drawSeed.drawDate,
-        drawnAt: new Date(),
-        totalTickets: drawSeed.totalTickets,
-        winningTicketNumber: drawSeed.winningTicketNumber,
-        imageUrl: drawSeed.imageUrl,
-        publicId: drawSeed.publicId,
-        isActive: true,
+        ticketNumber: drawSeed.winningTicketNumber,
       });
 
-      // Update competition status to completed
-      competition.status = CompetitionStatus.COMPLETED;
-      competition.drawnAt = draw.drawnAt;
-      competition.winnerId = winnerUser._id as mongoose.Types.ObjectId;
-      competition.isActive = true;
+      let ticketId: mongoose.Types.ObjectId;
+      if (!winningTicket) {
+        // Create the winning ticket if it doesn't exist
+        const newTicket = await Ticket.create({
+          competitionId,
+          ticketNumber: drawSeed.winningTicketNumber,
+          userId: winnerUser._id,
+          status: TicketStatus.ACTIVE,
+        });
+        ticketId = newTicket._id as mongoose.Types.ObjectId;
+      } else {
+        ticketId = winningTicket._id as mongoose.Types.ObjectId;
+        // Update ticket to active if it's not
+        if (winningTicket.status !== TicketStatus.ACTIVE) {
+          winningTicket.status = TicketStatus.ACTIVE;
+          winningTicket.userId = winnerUser._id as mongoose.Types.ObjectId;
+          await winningTicket.save();
+        }
+      }
+
+      // Create draw with new structure
+      // For seeding, create a snapshot with the winning ticket
+      // In production, we'd fetch all active tickets, but for seeding we'll use a simplified approach
+      const drawSeedValue = drawService.generateSeed();
+
+      // Get total tickets that should exist for this competition (for snapshotTicketCount)
+      const totalTickets =
+        drawSeed.totalTickets ||
+        competition.ticketsSold ||
+        competition.ticketLimit ||
+        1;
+
+      // Create snapshot with the winning ticket
+      // For showcase data, we'll create a simplified snapshot with just the winning ticket
+      // In production, this would include all active tickets at the time of the draw
+      const snapshot: Array<{
+        ticketNumber: number;
+        ticketId: string;
+        userId?: string;
+      }> = [
+        {
+          ticketNumber: drawSeed.winningTicketNumber,
+          ticketId: String(ticketId),
+          userId: String(winnerUser._id),
+        },
+      ];
+
+      // Create draw record (drawService will set snapshotTicketCount to snapshot.length)
+      const draw = await drawService.createDrawRecord(
+        String(competitionId),
+        drawSeedValue,
+        [
+          {
+            ticketNumber: drawSeed.winningTicketNumber,
+            ticketId: ticketId,
+            userId: winnerUser._id as mongoose.Types.ObjectId,
+          },
+        ],
+        snapshot,
+        DrawMethod.MANUAL,
+        String(seedAdmin._id),
+        'Seed data draw', // notes
+        drawSeed.imageUrl, // evidenceUrl
+        'https://youtu.be/9tjYe__vGCw?si=kOhgSeEAvNvL9l3T', // liveUrl
+        'youtube' // urlType
+      );
+
+      // Update drawTime to match drawDate (must be done after creation)
+      draw.drawTime = drawSeed.drawDate;
+
+      // Update snapshotTicketCount to match totalTickets from seed (for showcase purposes)
+      // This represents the total number of tickets that existed at the time of the draw
+      draw.snapshotTicketCount = totalTickets;
+      await draw.save();
+
+      // Generate claim code (same logic as Winner model pre-save hook)
+      const generateClaimCode = () => {
+        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        const part1 = Array.from({ length: 4 }, () =>
+          chars.charAt(Math.floor(Math.random() * chars.length))
+        ).join('');
+        const part2 = Array.from({ length: 4 }, () =>
+          chars.charAt(Math.floor(Math.random() * chars.length))
+        ).join('');
+        return `${part1}-${part2}`;
+      };
+
+      // Create winner
+      await Winner.create({
+        drawId: draw._id,
+        competitionId,
+        ticketId,
+        userId: winnerUser._id as mongoose.Types.ObjectId,
+        ticketNumber: drawSeed.winningTicketNumber,
+        prize: competition.prize,
+        notified: false,
+        claimed: false,
+        claimCode: generateClaimCode(),
+        proofImageUrl: drawSeed.imageUrl,
+      });
+
+      // Mark ticket as winner
+      const ticket = await Ticket.findById(ticketId);
+      if (ticket) {
+        ticket.status = TicketStatus.WINNER;
+        await ticket.save();
+      }
+
+      // Update competition status to drawn
+      competition.status = CompetitionStatus.DRAWN;
+      competition.drawnAt = drawSeed.drawDate;
       await competition.save();
 
       drawDocs.push(draw);
       logger.info(
-        `Draw created for ${competition.title} (winner: ${draw.winnerName})`
+        `Draw created for ${competition.title} (winner: ${winnerUser.firstName} ${winnerUser.lastName})`
       );
     }
 
@@ -718,10 +993,11 @@ const seedShowcaseData = async () => {
 
       const competitionId = competition._id as mongoose.Types.ObjectId;
 
+      // Find draw by drawTime matching drawDate
       const draw = drawDocs.find(
         (doc) =>
           doc.competitionId.toString() === competitionId.toString() &&
-          doc.drawDate.toISOString() ===
+          doc.drawTime.toISOString() ===
             new Date(champSeed.drawDate).toISOString()
       );
 
@@ -738,7 +1014,16 @@ const seedShowcaseData = async () => {
         continue;
       }
 
-      const winnerUser = await User.findById(draw.winnerId);
+      // Get winner from draw
+      const winner = await Winner.findOne({ drawId: draw._id });
+      if (!winner || !winner.userId) {
+        logger.warn(
+          `Skipping champion – winner not found for draw ${draw._id}`
+        );
+        continue;
+      }
+
+      const winnerUser = await User.findById(winner.userId);
       if (!winnerUser) {
         logger.warn(
           `Skipping champion – winner user missing for draw ${draw._id}`
@@ -746,22 +1031,27 @@ const seedShowcaseData = async () => {
         continue;
       }
 
-      const winnerUserId = draw.winnerId as mongoose.Types.ObjectId;
-      const championPrizeValue = draw.prizeValue ?? competition.prizeValue ?? 0;
+      // Get winner location from draw seed (stored in winnerLocationMap)
+      const winnerLocation =
+        winnerLocationMap.get(champSeed.competitionSlug) || 'UK';
+
+      // Convert prizeValue from pence to formatted string if not provided in champSeed
+      const championPrizeValue = competition.prizeValue ?? 0;
+      const formattedPrizeValue = champSeed.prizeValue
+        ? champSeed.prizeValue
+        : `£${(championPrizeValue / 100).toLocaleString('en-GB', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0,
+          })}`;
 
       await Champion.create({
         drawId: draw._id,
         competitionId,
-        winnerId: winnerUserId,
-        winnerName: draw.winnerName,
-        winnerLocation: draw.winnerLocation,
-        prizeName: draw.prizeName,
-        prizeValue:
-          champSeed.prizeValue ??
-          `£${(championPrizeValue / 100).toLocaleString('en-GB', {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })}`,
+        winnerId: winner.userId as mongoose.Types.ObjectId,
+        winnerName: `${winnerUser.firstName} ${winnerUser.lastName}`,
+        winnerLocation: winnerLocation,
+        prizeName: competition.prize,
+        prizeValue: formattedPrizeValue,
         testimonial: champSeed.testimonial,
         featured: champSeed.featured ?? false,
         image: {
@@ -772,14 +1062,17 @@ const seedShowcaseData = async () => {
       });
 
       logger.info(
-        `Champion created for ${competition.title} (${draw.winnerName})`
+        `Champion created for ${competition.title} (${winnerUser.firstName} ${winnerUser.lastName})`
       );
     }
+
+    const winnerCount = await Winner.countDocuments({});
 
     console.log('✅ Showcase data seeded successfully!');
     console.log(`   Competitions: ${competitionDocs.length}`);
     console.log(`   Draws:        ${drawDocs.length}`);
-    console.log(`   Champions:   ${await Champion.countDocuments({})}`);
+    console.log(`   Winners:      ${winnerCount}`);
+    console.log(`   Champions:    ${await Champion.countDocuments({})}`);
 
     await mongoose.connection.close();
     process.exit(0);

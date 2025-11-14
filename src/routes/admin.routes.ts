@@ -9,12 +9,14 @@ import {
   updateCompetitionStatus,
 } from '../controllers/competition.controller';
 import {
-  createDraw,
-  deleteDraw,
+  runDraw,
+  addManualWinner,
   getDraw,
-  getDraws,
   updateDraw,
+  verifyDraw,
+  getAllDrawsForAdmin,
 } from '../controllers/draw.controller';
+import { getCompetitionTickets } from '../controllers/ticket.controller';
 import {
   createChampion,
   deleteChampion,
@@ -33,14 +35,17 @@ import {
   updateUser,
 } from '../controllers/user.controller';
 import { getDashboardSummary } from '../controllers/admin.controller';
-import { protect, adminOnly, superAdminOnly } from '../middleware/auth.middleware';
+import {
+  protect,
+  adminOnly,
+  superAdminOnly,
+} from '../middleware/auth.middleware';
 import { upload } from '../middleware/upload.middleware';
 import { validate } from '../middleware/validation.middleware';
 import {
   createCompetitionSchema,
   updateCompetitionSchema,
 } from '../validators/competition.validator';
-import { createDrawSchema, updateDrawSchema } from '../validators/draw.validator';
 import {
   createChampionSchema,
   updateChampionSchema,
@@ -51,6 +56,53 @@ import {
   toggleAdminUserStatusSchema,
   updateAdminUserSchema,
 } from '../validators/user.validator';
+import {
+  getAllLegalPages,
+  getLegalPageBySlug,
+  createLegalPage,
+  updateLegalPage,
+  deleteLegalPage,
+  getAllFAQs,
+  getFAQById,
+  createFAQ,
+  updateFAQ,
+  deleteFAQ,
+  updateHeroCompetition,
+  removeHeroCompetition,
+} from '../controllers/content.controller';
+import {
+  getAllCategoriesForAdmin,
+  getCategoryByIdForAdmin,
+  createCategoryForAdmin,
+  updateCategoryForAdmin,
+  deleteCategoryForAdmin,
+} from '../controllers/category.controller';
+import {
+  createLegalPageSchema,
+  updateLegalPageSchema,
+  createFAQSchema,
+  updateFAQSchema,
+  updateHeroCompetitionSchema,
+} from '../validators/content.validator';
+import {
+  createCategorySchema,
+  updateCategorySchema,
+} from '../validators/category.validator';
+import {
+  getAllReviewsForAdmin,
+  getReviewByIdForAdmin,
+  updateReviewForAdmin,
+  deleteReviewForAdmin,
+} from '../controllers/review.controller';
+import { updateReviewSchema } from '../validators/review.validator';
+import { updateDrawSchema } from '../validators/draw.validator';
+import {
+  getAllWinnersForAdmin,
+  getWinnerByIdForAdmin,
+  updateWinnerForAdmin,
+  deleteWinnerForAdmin,
+} from '../controllers/winner.controller';
+import { updateWinnerSchema } from '../validators/winner.validator';
 
 const router = Router();
 
@@ -78,11 +130,13 @@ router.get('/competitions/:id/entries', getCompetitionEntries);
 router.delete('/competitions/:id', superAdminOnly, deleteCompetition);
 
 // Draw management
-router.get('/draws', getDraws);
-router.post('/draws', validate(createDrawSchema), createDraw);
+router.get('/draws', getAllDrawsForAdmin);
+router.post('/competitions/:id/run-draw', runDraw);
+router.post('/competitions/:id/add-winner', addManualWinner);
+router.get('/competitions/:id/tickets', getCompetitionTickets);
 router.get('/draws/:id', getDraw);
 router.put('/draws/:id', validate(updateDrawSchema), updateDraw);
-router.delete('/draws/:id', deleteDraw);
+router.get('/draws/:id/verify', verifyDraw);
 
 // Champions management
 router.get('/champions', getChampions);
@@ -122,5 +176,57 @@ router.patch(
 );
 router.delete('/users/:id', deleteUserByAdmin);
 
-export default router;
+// Content management - Legal Pages
+router.get('/content/pages', getAllLegalPages);
+router.post('/content/pages', validate(createLegalPageSchema), createLegalPage);
+router.get('/content/pages/:slug', getLegalPageBySlug);
+router.put(
+  '/content/pages/:slug',
+  validate(updateLegalPageSchema),
+  updateLegalPage
+);
+router.delete('/content/pages/:slug', deleteLegalPage);
 
+// Content management - FAQs
+router.get('/content/faqs', getAllFAQs);
+router.post('/content/faqs', validate(createFAQSchema), createFAQ);
+router.get('/content/faqs/:id', getFAQById);
+router.put('/content/faqs/:id', validate(updateFAQSchema), updateFAQ);
+router.delete('/content/faqs/:id', deleteFAQ);
+
+// Content management - Hero Competition
+router.patch(
+  '/content/hero',
+  validate(updateHeroCompetitionSchema),
+  updateHeroCompetition
+);
+router.delete('/content/hero', removeHeroCompetition);
+
+// Category management
+router.get('/categories', getAllCategoriesForAdmin);
+router.post(
+  '/categories',
+  validate(createCategorySchema),
+  createCategoryForAdmin
+);
+router.get('/categories/:id', getCategoryByIdForAdmin);
+router.put(
+  '/categories/:id',
+  validate(updateCategorySchema),
+  updateCategoryForAdmin
+);
+router.delete('/categories/:id', deleteCategoryForAdmin);
+
+// Review management
+router.get('/reviews', getAllReviewsForAdmin);
+router.get('/reviews/:id', getReviewByIdForAdmin);
+router.put('/reviews/:id', validate(updateReviewSchema), updateReviewForAdmin);
+router.delete('/reviews/:id', deleteReviewForAdmin);
+
+// Winner management
+router.get('/winners', getAllWinnersForAdmin);
+router.get('/winners/:id', getWinnerByIdForAdmin);
+router.put('/winners/:id', validate(updateWinnerSchema), updateWinnerForAdmin);
+router.delete('/winners/:id', deleteWinnerForAdmin);
+
+export default router;

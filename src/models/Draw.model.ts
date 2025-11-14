@@ -1,23 +1,54 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 
+export enum DrawMethod {
+  AUTOMATIC = 'automatic',
+  ADMIN_TRIGGERED = 'admin_triggered',
+  MANUAL = 'manual',
+}
+
+export interface IDrawResult {
+  ticketNumber: number;
+  ticketId: mongoose.Types.ObjectId;
+  userId?: mongoose.Types.ObjectId;
+}
+
 export interface IDraw extends Document {
   competitionId: mongoose.Types.ObjectId;
-  competitionTitle: string;
-  prizeName: string;
-  prizeValue?: number;
-  winnerId: mongoose.Types.ObjectId;
-  winnerName: string;
-  winnerLocation: string;
-  drawDate: Date;
-  drawnAt: Date;
-  totalTickets: number;
-  winningTicketNumber: number;
-  imageUrl?: string;
-  publicId?: string;
-  isActive: boolean;
+  drawTime: Date; // When the draw occurred
+  seed: string; // Hex string seed for RNG
+  algorithm: string; // Algorithm used (e.g., 'hmac-sha256-v1')
+  snapshotTicketCount: number; // Number of tickets at snapshot time
+  snapshotReference?: string; // Path/URL to snapshot file
+  snapshot?: any; // Embedded snapshot data (optional)
+  result: IDrawResult[]; // Array of winners (primary + reserves)
+  drawMethod: DrawMethod;
+  initiatedBy?: mongoose.Types.ObjectId; // Admin who triggered (if admin_triggered)
+  notes?: string; // Manual entry notes
+  evidenceUrl?: string; // URL to draw video/evidence (for manual)
+  liveUrl?: string; // URL to watch the draw live (e.g., YouTube, Vimeo, custom)
+  urlType?: string; // Type of URL to help frontend render (e.g., 'youtube', 'vimeo', 'custom')
   createdAt: Date;
   updatedAt: Date;
 }
+
+const drawResultSchema = new Schema<IDrawResult>(
+  {
+    ticketNumber: {
+      type: Number,
+      required: true,
+    },
+    ticketId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Ticket',
+      required: true,
+    },
+    userId: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+    },
+  },
+  { _id: false }
+);
 
 const drawSchema = new Schema<IDraw>(
   {
@@ -26,64 +57,66 @@ const drawSchema = new Schema<IDraw>(
       ref: 'Competition',
       required: [true, 'Competition ID is required'],
     },
-    competitionTitle: {
-      type: String,
-      required: [true, 'Competition title is required'],
-      trim: true,
-    },
-    prizeName: {
-      type: String,
-      required: [true, 'Prize name is required'],
-      trim: true,
-    },
-    prizeValue: {
-      type: Number,
-    },
-    winnerId: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
-      required: [true, 'Winner ID is required'],
-    },
-    winnerName: {
-      type: String,
-      required: [true, 'Winner name is required'],
-      trim: true,
-    },
-    winnerLocation: {
-      type: String,
-      required: [true, 'Winner location is required'],
-      trim: true,
-    },
-    drawDate: {
+    drawTime: {
       type: Date,
-      required: [true, 'Draw date is required'],
-    },
-    drawnAt: {
-      type: Date,
-      required: [true, 'Draw execution time is required'],
+      required: [true, 'Draw time is required'],
       default: Date.now,
     },
-    totalTickets: {
-      type: Number,
-      required: [true, 'Total tickets is required'],
-      min: [1, 'Total tickets must be at least 1'],
+    seed: {
+      type: String,
+      required: [true, 'Seed is required'],
+      trim: true,
     },
-    winningTicketNumber: {
-      type: Number,
-      required: [true, 'Winning ticket number is required'],
-      min: [1, 'Winning ticket number must be at least 1'],
+    algorithm: {
+      type: String,
+      required: [true, 'Algorithm is required'],
+      default: 'hmac-sha256-v1',
+      trim: true,
     },
-    imageUrl: {
+    snapshotTicketCount: {
+      type: Number,
+      required: [true, 'Snapshot ticket count is required'],
+      min: [1, 'Snapshot ticket count must be at least 1'],
+    },
+    snapshotReference: {
       type: String,
       trim: true,
     },
-    publicId: {
+    snapshot: {
+      type: Schema.Types.Mixed, // Store snapshot as JSON
+    },
+    result: {
+      type: [drawResultSchema],
+      required: [true, 'Draw result is required'],
+      default: [],
+    },
+    drawMethod: {
+      type: String,
+      enum: Object.values(DrawMethod),
+      required: [true, 'Draw method is required'],
+      default: DrawMethod.AUTOMATIC,
+    },
+    initiatedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      index: true,
+    },
+    notes: {
       type: String,
       trim: true,
     },
-    isActive: {
-      type: Boolean,
-      default: true,
+    evidenceUrl: {
+      type: String,
+      trim: true,
+    },
+    liveUrl: {
+      type: String,
+      trim: true,
+    },
+    urlType: {
+      type: String,
+      trim: true,
+      enum: ['youtube', 'vimeo', 'twitch', 'custom', 'other'],
     },
   },
   {
@@ -94,23 +127,14 @@ const drawSchema = new Schema<IDraw>(
 );
 
 // Indexes
-drawSchema.index({ drawDate: -1 });
-drawSchema.index({ drawnAt: -1 });
-drawSchema.index({ competitionId: 1 });
-drawSchema.index({ winnerId: 1 });
-drawSchema.index({ isActive: 1, drawnAt: -1 });
+drawSchema.index({ competitionId: 1, drawTime: -1 });
+drawSchema.index({ drawTime: -1 });
+drawSchema.index({ drawMethod: 1 });
 
 // Virtuals
 drawSchema.virtual('competition', {
   ref: 'Competition',
   localField: 'competitionId',
-  foreignField: '_id',
-  justOne: true,
-});
-
-drawSchema.virtual('winner', {
-  ref: 'User',
-  localField: 'winnerId',
   foreignField: '_id',
   justOne: true,
 });

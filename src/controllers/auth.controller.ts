@@ -14,6 +14,8 @@ import {
 import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
 import crypto from 'crypto';
+import emailService from '../services/email.service';
+import logger from '../utils/logger';
 
 /**
  * @desc    Register new user
@@ -59,6 +61,19 @@ export const register = async (
       .digest('hex');
     user.emailVerificationExpire = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
     await user.save();
+
+    // Send verification email
+    try {
+      await emailService.sendVerificationEmail(
+        user.email,
+        user.firstName,
+        verificationToken
+      );
+      logger.info(`Verification email sent to ${user.email}`);
+    } catch (emailError) {
+      logger.error(`Failed to send verification email to ${user.email}:`, emailError);
+      // Don't fail registration if email fails, but log the error
+    }
 
     // Generate tokens
     const token = generateToken(String(user._id));
@@ -240,7 +255,7 @@ export const changePassword = async (
 
 /**
  * @desc    Verify email
- * @route   POST /api/v1/auth/verify-email
+ * @route   GET/POST /api/v1/auth/verify-email
  * @access  Public
  */
 export const verifyEmail = async (
@@ -249,13 +264,14 @@ export const verifyEmail = async (
   next: NextFunction
 ) => {
   try {
-    const { token } = req.body;
+    // Support both GET (query param) and POST (body) for flexibility
+    const token = req.query.token || req.body.token;
 
     if (!token) {
       throw new ApiError('Verification token is required', 400);
     }
 
-    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    const hashedToken = crypto.createHash('sha256').update(token as string).digest('hex');
 
     const user = await User.findOne({
       emailVerificationToken: hashedToken,
@@ -264,6 +280,14 @@ export const verifyEmail = async (
 
     if (!user) {
       throw new ApiError('Invalid or expired verification token', 400);
+    }
+
+    // Check if already verified
+    if (user.isVerified) {
+      res.json(
+        ApiResponse.success(null, 'Email is already verified')
+      );
+      return;
     }
 
     user.isVerified = true;
@@ -303,6 +327,19 @@ export const forgotPassword = async (
       .digest('hex');
     user.passwordResetExpire = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
     await user.save();
+
+    // Send password reset email
+    try {
+      await emailService.sendPasswordResetEmail(
+        user.email,
+        user.firstName,
+        resetToken
+      );
+      logger.info(`Password reset email sent to ${user.email}`);
+    } catch (emailError) {
+      logger.error(`Failed to send password reset email to ${user.email}:`, emailError);
+      // Don't fail the request if email fails, but log the error
+    }
 
     res.json(ApiResponse.success(null, 'Password reset email sent'));
   } catch (error) {
@@ -581,6 +618,77 @@ export const adminLogin = async (
  *       403:
  *         description: Not an admin user
  */
+/**
+ * @desc    Resend verification email
+ * @route   POST /api/v1/auth/resend-verification
+ * @access  Public
+ */
+export const resendVerificationEmail = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      throw new ApiError('Email is required', 400);
+    }
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      // Don't reveal if user exists or not for security
+      res.json(
+        ApiResponse.success(
+          null,
+          'If an account exists with this email, a verification email has been sent.'
+        )
+      );
+      return;
+    }
+
+    // Check if already verified
+    if (user.isVerified) {
+      res.json(
+        ApiResponse.success(null, 'Email is already verified')
+      );
+      return;
+    }
+
+    // Generate new verification token
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    user.emailVerificationToken = crypto
+      .createHash('sha256')
+      .update(verificationToken)
+      .digest('hex');
+    user.emailVerificationExpire = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    await user.save();
+
+    // Send verification email
+    try {
+      await emailService.sendVerificationEmail(
+        user.email,
+        user.firstName,
+        verificationToken
+      );
+      logger.info(`Verification email resent to ${user.email}`);
+    } catch (emailError) {
+      logger.error(`Failed to send verification email to ${user.email}:`, emailError);
+      throw new ApiError('Failed to send verification email', 500);
+    }
+
+    res.json(
+      ApiResponse.success(
+        null,
+        'If an account exists with this email, a verification email has been sent.'
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
 /**
  * @desc    Verify admin status
  * @route   GET /api/v1/auth/admin/verify

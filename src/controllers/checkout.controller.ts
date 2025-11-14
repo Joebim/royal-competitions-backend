@@ -1,76 +1,27 @@
 import { Request, Response, NextFunction } from 'express';
-import mongoose from 'mongoose';
-import { Cart, Competition, Entry, Order, Payment } from '../models';
+import {
+  Cart,
+  Competition,
+  Order,
+  Payment,
+  Ticket,
+  TicketStatus,
+} from '../models';
 import { OrderPaymentStatus, OrderStatus } from '../models/Order.model';
 import { CompetitionStatus } from '../models/Competition.model';
 import { PaymentStatus } from '../models/Payment.model';
 import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
 import stripeService from '../services/stripe.service';
-import { generateTicketNumbers } from '../utils/randomGenerator';
+import logger from '../utils/logger';
+import { generateOrderNumber } from '../utils/randomGenerator';
 
-interface CheckoutItemInput {
-  competitionId: string;
-  quantity: number;
-  answer?: string;
-}
-
-const MAX_TICKETS_PER_ITEM = 20;
-
-const parseItems = (items: any): CheckoutItemInput[] => {
-  if (!items || !Array.isArray(items) || items.length === 0) {
-    throw new ApiError('At least one item is required', 422);
-  }
-
-  return items.map((item) => ({
-    competitionId: item.competitionId || item.id,
-    quantity: Number(item.quantity),
-    answer: item.answer,
-  }));
-};
-
-const ensureCompetitionCanBePurchased = (competition: any) => {
-  if (!competition.isActive) {
-    throw new ApiError(`Competition ${competition.title} is not active`, 400);
-  }
-
-  if (competition.status !== CompetitionStatus.ACTIVE) {
-    throw new ApiError(
-      `Competition ${competition.title} is not open for entries`,
-      400
-    );
-  }
-};
-
-const formatOrderResponse = (order: any) => {
-  const doc = order.toObject ? order.toObject() : order;
-  return {
-    id: doc._id,
-    orderNumber: doc.orderNumber,
-    status: doc.status,
-    paymentStatus: doc.paymentStatus,
-    subtotal: doc.subtotal,
-    total: doc.total,
-    currency: doc.currency,
-    items: doc.items.map((item: any) => ({
-      id: item._id,
-      competitionId: item.competitionId,
-      competitionTitle: item.competitionTitle,
-      quantity: item.quantity,
-      ticketPrice: item.ticketPrice,
-      total: item.total,
-      ticketNumbers: item.ticketNumbers,
-      answer: item.answer,
-    })),
-    billingDetails: doc.billingDetails,
-    billingAddress: doc.billingAddress,
-    shippingAddress: doc.shippingAddress,
-    createdAt: doc.createdAt,
-    updatedAt: doc.updatedAt,
-  };
-};
-
-export const createCheckoutPaymentIntent = async (
+/**
+ * Create checkout from cart
+ * This creates orders for each competition in the cart
+ * Note: Tickets should already be reserved before checkout
+ */
+export const createCheckoutFromCart = async (
   req: Request,
   res: Response,
   next: NextFunction
@@ -80,138 +31,259 @@ export const createCheckoutPaymentIntent = async (
       throw new ApiError('Not authorized', 401);
     }
 
-    const items = parseItems(req.body.items);
+    const { billingDetails, shippingAddress, marketingOptIn } = req.body;
 
-    const competitionIds = items.map((item) => item.competitionId);
-    const competitions = await Competition.find({
-      _id: { $in: competitionIds },
-    });
-
-    if (competitions.length !== items.length) {
-      throw new ApiError('One or more competitions could not be found', 404);
+    if (!billingDetails || !billingDetails.email) {
+      throw new ApiError('Billing details with email are required', 400);
     }
 
-    const competitionMap = new Map(
-      competitions.map((competition) => [String(competition._id), competition])
-    );
+    // Get user's cart
+    const cart = await Cart.findOne({ userId: req.user._id });
+    if (!cart || !cart.items || cart.items.length === 0) {
+      throw new ApiError('Cart is empty', 400);
+    }
 
-    const orderItems = items.map((item) => {
-      const competition = competitionMap.get(item.competitionId);
+    const orders = [];
 
+    // Create an order for each competition in the cart
+    for (const cartItem of cart.items) {
+      const competition = await Competition.findById(cartItem.competitionId);
       if (!competition) {
         throw new ApiError('Competition not found', 404);
       }
 
-      ensureCompetitionCanBePurchased(competition);
-
-      if (!item.quantity || item.quantity < 1) {
-        throw new ApiError('Quantity must be at least 1', 422);
-      }
-
-      if (item.quantity > MAX_TICKETS_PER_ITEM) {
+      // Check if competition is available
+      if (
+        !competition.isActive ||
+        competition.status !== CompetitionStatus.LIVE
+      ) {
         throw new ApiError(
-          `You can only purchase up to ${MAX_TICKETS_PER_ITEM} tickets per competition`,
-          422
+          `Competition ${competition.title} is not available`,
+          400
         );
       }
 
-      const availableTickets = competition.maxTickets - competition.soldTickets;
+      // Calculate available tickets
+      const availableTickets =
+        competition.ticketLimit !== null
+          ? competition.ticketLimit - competition.ticketsSold
+          : Infinity;
 
-      if (item.quantity > availableTickets) {
+      if (
+        availableTickets !== Infinity &&
+        cartItem.quantity > availableTickets
+      ) {
         throw new ApiError(
           `Only ${availableTickets} tickets remaining for ${competition.title}`,
           400
         );
       }
 
-      const answer = (item.answer || '').toString().trim();
-      if (!answer) {
-        throw new ApiError(
-          `Answer is required for competition ${competition.title}`,
-          422
-        );
+      // Calculate amount in pence
+      const amountPence = competition.ticketPricePence * cartItem.quantity;
+
+      // Generate unique order number
+      let orderNumber = generateOrderNumber();
+      // Ensure uniqueness (retry if duplicate)
+      let orderExists = await Order.findOne({ orderNumber });
+      let retries = 0;
+      while (orderExists && retries < 5) {
+        orderNumber = generateOrderNumber();
+        orderExists = await Order.findOne({ orderNumber });
+        retries++;
+      }
+      if (orderExists) {
+        throw new ApiError('Failed to generate unique order number', 500);
       }
 
-      return {
+      // Create order
+      const order = await Order.create({
+        userId: req.user._id,
+        competitionId: competition._id,
+        orderNumber,
+        amountPence,
+        currency: 'GBP',
+        quantity: cartItem.quantity,
+        status: OrderStatus.PENDING,
+        paymentStatus: OrderPaymentStatus.PENDING,
+        ticketsReserved: [], // Will be populated after reservation
+        billingDetails,
+        shippingAddress,
+        marketingOptIn: marketingOptIn || false,
+      });
+
+      // Create payment intent
+      const paymentIntent = await stripeService.createPaymentIntent({
+        amount: amountPence,
+        currency: 'gbp',
+        metadata: {
+          orderId: String(order._id),
+          competitionId: String(competition._id),
+          userId: String(req.user._id),
+        },
+      });
+
+      // Update order with payment intent
+      order.stripePaymentIntent = paymentIntent.id;
+      await order.save();
+
+      // Create payment record
+      await Payment.create({
+        orderId: order._id,
+        userId: req.user._id,
+        amount: amountPence,
+        paymentIntentId: paymentIntent.id,
+        status: PaymentStatus.PENDING,
+      });
+
+      orders.push({
+        id: order._id,
         competitionId: competition._id,
         competitionTitle: competition.title,
-        quantity: item.quantity,
-        ticketPrice: competition.ticketPrice,
-        total: Number((competition.ticketPrice * item.quantity).toFixed(2)),
-        answer,
-        ticketNumbers: [],
-      };
-    });
-
-    const subtotal = orderItems.reduce((total, item) => total + item.total, 0);
-    const currency = 'GBP';
-
-    const requesterId = String(req.user._id);
-
-    let orderDoc =
-      req.body.orderId !== undefined && req.body.orderId !== null
-        ? await Order.findById(req.body.orderId)
-        : null;
-
-    if (orderDoc) {
-      if (
-        orderDoc.userId.toString() !== requesterId ||
-        orderDoc.status !== OrderStatus.PENDING
-      ) {
-        throw new ApiError('Cannot reuse this order for checkout', 400);
-      }
-
-      orderDoc.items = orderItems as any;
-      orderDoc.subtotal = subtotal;
-      orderDoc.total = subtotal;
-      orderDoc.currency = currency;
-      orderDoc.billingDetails = req.body.billingDetails;
-      orderDoc.billingAddress = req.body.billingAddress;
-      await orderDoc.save();
-    } else {
-      orderDoc = await Order.create({
-        userId: req.user._id,
-        items: orderItems,
-        subtotal,
-        total: subtotal,
-        currency,
-        billingDetails: req.body.billingDetails,
-        billingAddress: req.body.billingAddress,
+        quantity: cartItem.quantity,
+        amountPence,
+        amountGBP: (amountPence / 100).toFixed(2),
+        clientSecret: paymentIntent.client_secret,
       });
     }
-
-    const paymentIntent = await stripeService.createPaymentIntent({
-      amount: orderDoc.total,
-      currency: currency.toLowerCase(),
-      metadata: {
-        orderId: String(orderDoc._id),
-        userId: String(req.user._id),
-      },
-    });
-
-    orderDoc.paymentIntentId = paymentIntent.id;
-    await orderDoc.save();
-
-    await Payment.findOneAndUpdate(
-      { paymentIntentId: paymentIntent.id },
-      {
-        orderId: orderDoc._id,
-        userId: req.user._id,
-        amount: orderDoc.total,
-        currency: currency.toLowerCase(),
-        status: PaymentStatus.PENDING,
-      },
-      { upsert: true, new: true }
-    );
 
     res.status(201).json(
       ApiResponse.success(
         {
-          order: formatOrderResponse(orderDoc),
+          orders,
+          message:
+            'Orders created. Please reserve tickets and complete payment for each order.',
+        },
+        'Checkout initiated successfully'
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Create payment intent for an existing order
+ * This is used when tickets are already reserved
+ */
+export const createCheckoutPaymentIntent = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { orderId, billingDetails, shippingAddress, marketingOptIn } =
+      req.body;
+
+    if (!orderId) {
+      throw new ApiError('Order ID is required', 400);
+    }
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      throw new ApiError('Order not found', 404);
+    }
+
+    // Check authorization - userId is optional for guest checkout
+    const requesterId = req.user ? String(req.user._id) : null;
+    if (
+      order.userId &&
+      requesterId &&
+      order.userId.toString() !== requesterId
+    ) {
+      throw new ApiError('Not authorized', 403);
+    }
+
+    // Verify reserved tickets exist
+    if (
+      !order.ticketsReserved ||
+      order.ticketsReserved.length !== order.quantity
+    ) {
+      throw new ApiError('Tickets must be reserved before checkout', 400);
+    }
+
+    // Check if billing details exist (either from request or order)
+    const finalBillingDetails = billingDetails || order.billingDetails;
+    if (!finalBillingDetails || !finalBillingDetails.email) {
+      throw new ApiError('Billing details with email are required', 400);
+    }
+
+    // Get competition
+    const competition = await Competition.findById(order.competitionId);
+    if (!competition) {
+      throw new ApiError('Competition not found', 404);
+    }
+
+    // Check if competition is still available
+    if (
+      !competition.isActive ||
+      competition.status !== CompetitionStatus.LIVE
+    ) {
+      throw new ApiError('Competition is no longer available', 400);
+    }
+
+    // Update order with billing details if provided
+    if (billingDetails) {
+      order.billingDetails = billingDetails;
+    }
+    if (shippingAddress) {
+      order.shippingAddress = shippingAddress;
+    }
+    if (marketingOptIn !== undefined) {
+      order.marketingOptIn = marketingOptIn;
+    }
+
+    // Create or update payment intent
+    let paymentIntent;
+    if (order.stripePaymentIntent) {
+      // Use existing payment intent
+      paymentIntent = await stripeService.getPaymentIntent(
+        order.stripePaymentIntent
+      );
+    } else {
+      // Create new payment intent
+      paymentIntent = await stripeService.createPaymentIntent({
+        amount: order.amountPence,
+        currency: 'gbp',
+        metadata: {
+          orderId: String(order._id),
+          competitionId: String(order.competitionId),
+          userId: order.userId ? String(order.userId) : 'guest',
+        },
+      });
+
+      order.stripePaymentIntent = paymentIntent.id;
+      await order.save();
+
+      // Create or update payment record
+      await Payment.findOneAndUpdate(
+        { paymentIntentId: paymentIntent.id },
+        {
+          orderId: order._id,
+          userId: order.userId,
+          amount: order.amountPence,
+          paymentIntentId: paymentIntent.id,
+          status: PaymentStatus.PENDING,
+        },
+        { upsert: true, new: true }
+      );
+    }
+
+    res.json(
+      ApiResponse.success(
+        {
+          order: {
+            id: order._id,
+            competitionId: order.competitionId,
+            amountPence: order.amountPence,
+            amountGBP: (order.amountPence / 100).toFixed(2),
+            quantity: order.quantity,
+            ticketsReserved: order.ticketsReserved,
+          },
           payment: {
             clientSecret: paymentIntent.client_secret,
-            amount: orderDoc.total,
-            currency,
+            amount: order.amountPence,
+            currency: 'GBP',
           },
         },
         'Payment intent created'
@@ -222,187 +294,98 @@ export const createCheckoutPaymentIntent = async (
   }
 };
 
+/**
+ * Confirm checkout order
+ * This endpoint is mostly handled by the webhook, but can be used to verify status
+ */
 export const confirmCheckoutOrder = async (
   req: Request,
   res: Response,
   next: NextFunction
 ) => {
-  const session = await mongoose.startSession();
-
   try {
-    if (!req.user) {
-      throw new ApiError('Not authorized', 401);
+    const { orderId, paymentIntentId } = req.body;
+
+    if (!orderId && !paymentIntentId) {
+      throw new ApiError('Order ID or Payment Intent ID is required', 400);
     }
 
-    const requesterId = String(req.user._id);
-    const requesterObjectId = req.user._id;
-
-    const { paymentIntentId, orderId } = req.body;
-
-    if (!paymentIntentId) {
-      throw new ApiError('paymentIntentId is required', 422);
+    let order;
+    if (orderId) {
+      order = await Order.findById(orderId);
+    } else if (paymentIntentId) {
+      order = await Order.findOne({ stripePaymentIntent: paymentIntentId });
     }
-
-    const paymentIntent = await stripeService.getPaymentIntent(paymentIntentId);
-
-    if (
-      paymentIntent.status !== 'succeeded' &&
-      paymentIntent.status !== 'processing'
-    ) {
-      throw new ApiError(
-        'Payment has not been completed. Please confirm the payment with Stripe.',
-        400
-      );
-    }
-
-    const resolvedOrderId =
-      orderId ||
-      paymentIntent.metadata?.orderId ||
-      paymentIntent.metadata?.order_id;
-
-    if (!resolvedOrderId) {
-      throw new ApiError('Order could not be determined for this payment', 400);
-    }
-
-    let order = await Order.findById(resolvedOrderId);
 
     if (!order) {
       throw new ApiError('Order not found', 404);
     }
 
-    const existingOrder = order;
-
-    if (existingOrder.userId.toString() !== requesterId) {
-      throw new ApiError('You are not allowed to modify this order', 403);
+    // Check authorization
+    const requesterId = req.user ? String(req.user._id) : null;
+    if (
+      order.userId &&
+      requesterId &&
+      order.userId.toString() !== requesterId
+    ) {
+      throw new ApiError('Not authorized', 403);
     }
 
-    if (existingOrder.paymentStatus === OrderPaymentStatus.PAID) {
-      res.json(
-        ApiResponse.success(
-          { order: formatOrderResponse(existingOrder) },
-          'Order already confirmed'
-        )
-      );
-      return;
-    }
-
-    await session.withTransaction(async () => {
-      const updatedItems = [];
-      const entriesToCreate: any[] = [];
-
-      for (const item of existingOrder.items) {
-        const competition = await Competition.findOne({
-          _id: item.competitionId,
-          isActive: true,
-        }).session(session);
-
-        if (!competition) {
-          throw new ApiError('Competition not found during confirmation', 404);
-        }
-
-        ensureCompetitionCanBePurchased(competition);
-
-        const availableTickets =
-          competition.maxTickets - competition.soldTickets;
-
-        if (item.quantity > availableTickets) {
-          throw new ApiError(
-            `Only ${availableTickets} tickets remaining for ${competition.title}`,
-            400
-          );
-        }
-
-        const ticketNumbers = generateTicketNumbers(item.quantity);
-        updatedItems.push({
-          competitionId: item.competitionId,
-          competitionTitle: item.competitionTitle,
-          quantity: item.quantity,
-          ticketPrice: item.ticketPrice,
-          total: item.total,
-          answer: item.answer,
-          ticketNumbers,
-        });
-
-        const entries = ticketNumbers.map((ticketNumber) => ({
-          userId: requesterObjectId,
-          competitionId: competition._id,
-          orderId: existingOrder._id,
-          ticketNumber,
-          answer: item.answer,
-          isCorrect:
-            item.answer.toLowerCase() ===
-            competition.question.correctAnswer.toLowerCase(),
-        }));
-
-        entriesToCreate.push(...entries);
-
-        await Competition.updateOne(
-          {
-            _id: competition._id,
-            soldTickets: { $lte: competition.maxTickets - item.quantity },
-          },
-          { $inc: { soldTickets: item.quantity } }
-        ).session(session);
+    // Get payment intent status
+    let paymentIntent = null;
+    if (order.stripePaymentIntent) {
+      try {
+        paymentIntent = await stripeService.getPaymentIntent(
+          order.stripePaymentIntent
+        );
+      } catch (error: any) {
+        logger.error('Error getting payment intent:', error);
       }
+    }
 
-      await Entry.insertMany(entriesToCreate, { session });
+    // Get competition
+    const competition = await Competition.findById(order.competitionId);
 
-      existingOrder.items = updatedItems as any;
-      existingOrder.status = OrderStatus.COMPLETED;
-      existingOrder.paymentStatus = OrderPaymentStatus.PAID;
-      existingOrder.paymentMethod =
-        paymentIntent.payment_method_types?.[0] || existingOrder.paymentMethod;
-      existingOrder.billingDetails =
-        req.body.billingDetails || existingOrder.billingDetails;
-      existingOrder.billingAddress =
-        req.body.billingAddress || existingOrder.billingAddress;
-      existingOrder.shippingAddress =
-        req.body.shippingAddress || existingOrder.shippingAddress;
-
-      await existingOrder.save({ session });
-
-      await Payment.findOneAndUpdate(
-        { paymentIntentId },
-        {
-          status: PaymentStatus.SUCCEEDED,
-          paymentMethod: existingOrder.paymentMethod,
-        },
-        { session }
-      );
-
-      await Cart.findOneAndUpdate(
-        { userId: requesterObjectId },
-        { $set: { items: [] } },
-        { session }
-      );
-    });
-
-    await session.endSession();
-
-    order = await Order.findById(resolvedOrderId);
-    const entries = await Entry.find({ orderId: resolvedOrderId })
-      .sort({ createdAt: 1 })
-      .lean();
+    // Get tickets if they exist
+    const tickets = await Ticket.find({
+      orderId: order._id,
+      status: { $in: [TicketStatus.ACTIVE, TicketStatus.WINNER] },
+    }).sort({ ticketNumber: 1 });
 
     res.json(
       ApiResponse.success(
         {
-          order: formatOrderResponse(order!),
-          entries: entries.map((entry) => ({
-            id: entry._id,
-            competitionId: entry.competitionId,
-            userId: entry.userId,
-            ticketNumber: entry.ticketNumber,
-            answer: entry.answer,
-            isCorrect: entry.isCorrect,
-            createdAt: entry.createdAt,
-          })),
+          order: {
+            id: order._id,
+            competitionId: order.competitionId,
+            competitionTitle: competition?.title,
+            amountPence: order.amountPence,
+            amountGBP: (order.amountPence / 100).toFixed(2),
+            quantity: order.quantity,
+            status: order.status,
+            paymentStatus: order.paymentStatus,
+            ticketsReserved: order.ticketsReserved,
+            tickets: tickets.map((ticket) => ({
+              id: ticket._id,
+              ticketNumber: ticket.ticketNumber,
+              status: ticket.status,
+            })),
+            paymentIntent: paymentIntent
+              ? {
+                  id: paymentIntent.id,
+                  status: paymentIntent.status,
+                  amount: paymentIntent.amount,
+                  currency: paymentIntent.currency,
+                }
+              : null,
+            createdAt: order.createdAt,
+            updatedAt: order.updatedAt,
+          },
         },
-        'Order confirmed successfully'
+        'Order status retrieved successfully'
       )
     );
   } catch (error) {
-    await session.endSession();
     next(error);
   }
 };

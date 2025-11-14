@@ -7,7 +7,14 @@ export const createAdminUserSchema = Joi.object({
   firstName: Joi.string().trim().max(50).required(),
   lastName: Joi.string().trim().max(50).required(),
   email: Joi.string().trim().lowercase().email().required(),
-  phone: Joi.string().pattern(phoneRegex).optional(),
+  phone: Joi.string()
+    .replace(/\s+/g, '') // Remove all spaces
+    .replace(/-/g, '') // Remove dashes
+    .pattern(phoneRegex)
+    .messages({
+      'string.pattern.base': 'Phone number must be a valid UK number (e.g., +447123456789 or 07123456789)',
+    })
+    .optional(),
   password: Joi.string().min(8).required(),
   role: Joi.string()
     .valid(...Object.values(UserRole))
@@ -21,7 +28,13 @@ export const updateAdminUserSchema = Joi.object({
   firstName: Joi.string().trim().max(50),
   lastName: Joi.string().trim().max(50),
   email: Joi.string().trim().lowercase().email(),
-  phone: Joi.string().pattern(phoneRegex),
+  phone: Joi.string()
+    .replace(/\s+/g, '') // Remove all spaces
+    .replace(/-/g, '') // Remove dashes
+    .pattern(phoneRegex)
+    .messages({
+      'string.pattern.base': 'Phone number must be a valid UK number (e.g., +447123456789 or 07123456789)',
+    }),
   role: Joi.string().valid(...Object.values(UserRole)),
   isVerified: Joi.boolean(),
   isActive: Joi.boolean(),
@@ -35,5 +48,8 @@ export const resetAdminUserPasswordSchema = Joi.object({
 export const toggleAdminUserStatusSchema = Joi.object({
   isActive: Joi.boolean(),
 });
+
+
+
 
 

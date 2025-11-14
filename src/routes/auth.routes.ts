@@ -10,6 +10,7 @@ import {
   forgotPassword,
   resetPassword,
   verifyEmail,
+  resendVerificationEmail,
   adminLogin,
   verifyAdmin,
 } from '../controllers/auth.controller';
@@ -24,6 +25,7 @@ import {
   updateProfileSchema,
   changePasswordSchema,
   verifyEmailSchema,
+  resendVerificationSchema,
 } from '../validators/auth.validator';
 
 const router = Router();
@@ -34,7 +36,9 @@ router.post('/login', authLimiter, validate(loginSchema), login);
 router.post('/refresh', refreshToken);
 router.post('/forgot-password', authLimiter, validate(forgotPasswordSchema), forgotPassword);
 router.post('/reset-password', authLimiter, validate(resetPasswordSchema), resetPassword);
-router.post('/verify-email', validate(verifyEmailSchema), verifyEmail);
+router.get('/verify-email', verifyEmail); // GET for clickable links
+router.post('/verify-email', validate(verifyEmailSchema), verifyEmail); // POST for API calls
+router.post('/resend-verification', authLimiter, validate(resendVerificationSchema), resendVerificationEmail);
 
 // Protected routes
 router.get('/profile', protect, getProfile);

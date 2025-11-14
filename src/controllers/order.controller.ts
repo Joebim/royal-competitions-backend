@@ -1,37 +1,39 @@
 import { Request, Response, NextFunction } from 'express';
-import { Order } from '../models';
 import {
-  OrderPaymentStatus,
-  OrderStatus,
-} from '../models/Order.model';
+  Order,
+  Competition,
+  Ticket,
+  TicketStatus,
+  Event,
+  EventType,
+} from '../models';
+import { OrderPaymentStatus, OrderStatus } from '../models/Order.model';
 import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
 import { getPagination } from '../utils/pagination';
 import { UserRole } from '../models';
+import stripeService from '../services/stripe.service';
+import { generateOrderNumber } from '../utils/randomGenerator';
 
 const formatOrderResponse = (order: any) => {
   const doc = order.toObject ? order.toObject() : order;
   return {
     id: doc._id,
+    competitionId: doc.competitionId,
+    userId: doc.userId,
     orderNumber: doc.orderNumber,
+    amountPence: doc.amountPence,
+    amountGBP: (doc.amountPence / 100).toFixed(2),
+    currency: doc.currency,
+    quantity: doc.quantity,
     status: doc.status,
     paymentStatus: doc.paymentStatus,
-    subtotal: doc.subtotal,
-    total: doc.total,
-    currency: doc.currency,
-    items: doc.items.map((item: any) => ({
-      id: item._id,
-      competitionId: item.competitionId,
-      competitionTitle: item.competitionTitle,
-      quantity: item.quantity,
-      ticketPrice: item.ticketPrice,
-      total: item.total,
-      ticketNumbers: item.ticketNumbers,
-      answer: item.answer,
-    })),
+    stripePaymentIntent: doc.stripePaymentIntent,
+    ticketsReserved: doc.ticketsReserved,
+    paymentReference: doc.paymentReference,
     billingDetails: doc.billingDetails,
-    billingAddress: doc.billingAddress,
     shippingAddress: doc.shippingAddress,
+    marketingOptIn: doc.marketingOptIn,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
@@ -59,8 +61,9 @@ export const getMyOrders = async (
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 10;
     const status = req.query.status as OrderStatus | undefined;
-    const paymentStatus = req.query
-      .paymentStatus as OrderPaymentStatus | undefined;
+    const paymentStatus = req.query.paymentStatus as
+      | OrderPaymentStatus
+      | undefined;
 
     const query: Record<string, any> = { userId: req.user._id };
     if (status) query.status = status;
@@ -70,6 +73,7 @@ export const getMyOrders = async (
 
     const [orders, total] = await Promise.all([
       Order.find(query)
+        .populate('competitionId', 'title prize images')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(pageLimit),
@@ -112,12 +116,17 @@ export const getOrderById = async (
 
     const requesterId = String(req.user._id);
 
-    if (
-      order.userId.toString() !== requesterId &&
-      !isAdmin
-    ) {
+    // Check authorization - allow if user matches or is admin, or if no userId (guest order)
+    const orderUserId = order.userId?.toString();
+    const isOrderOwner = orderUserId === requesterId;
+    const isGuestOrder = !orderUserId;
+
+    if (!isAdmin && !isOrderOwner && !isGuestOrder) {
       throw new ApiError('Not authorized to access this order', 403);
     }
+
+    // Populate competition for response
+    await order.populate('competitionId', 'title prize images');
 
     res.json(
       ApiResponse.success(
@@ -176,16 +185,21 @@ export const getAllOrdersForAdmin = async (
 
     const filters: Record<string, any> = {};
     if (req.query.status) filters.status = req.query.status;
-    if (req.query.paymentStatus) filters.paymentStatus = req.query.paymentStatus;
+    if (req.query.paymentStatus)
+      filters.paymentStatus = req.query.paymentStatus;
+    if (req.query.competitionId)
+      filters.competitionId = req.query.competitionId;
 
     if (req.query.search) {
       filters.$or = [
-        { orderNumber: { $regex: req.query.search, $options: 'i' } },
+        { paymentReference: { $regex: req.query.search, $options: 'i' } },
       ];
     }
 
     const [orders, total] = await Promise.all([
       Order.find(filters)
+        .populate('competitionId', 'title prize')
+        .populate('userId', 'firstName lastName email')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(pageLimit),
@@ -199,6 +213,134 @@ export const getAllOrdersForAdmin = async (
         },
         'Orders retrieved successfully',
         buildPaginationMeta(page, pageLimit, total)
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Create order
+ * POST /api/v1/orders
+ */
+export const createOrder = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const {
+      competitionId,
+      qty,
+      ticketsReserved,
+      billingDetails,
+      shippingAddress,
+      marketingOptIn,
+    } = req.body;
+
+    if (
+      !competitionId ||
+      !qty ||
+      !ticketsReserved ||
+      !Array.isArray(ticketsReserved)
+    ) {
+      throw new ApiError('Missing required fields', 400);
+    }
+
+    if (!billingDetails || !billingDetails.email) {
+      throw new ApiError('Billing details with email are required', 400);
+    }
+
+    // Get competition
+    const competition = await Competition.findById(competitionId);
+    if (!competition) {
+      throw new ApiError('Competition not found', 404);
+    }
+
+    // Verify reserved tickets exist and are still reserved
+    const reservedTickets = await Ticket.find({
+      competitionId,
+      ticketNumber: { $in: ticketsReserved },
+      status: TicketStatus.RESERVED,
+      reservedUntil: { $gt: new Date() },
+    });
+
+    if (reservedTickets.length !== qty) {
+      throw new ApiError('Some reserved tickets are no longer available', 400);
+    }
+
+    // Calculate amount
+    const amountPence = competition.ticketPricePence * qty;
+
+    // Generate unique order number
+    let orderNumber = generateOrderNumber();
+    // Ensure uniqueness (retry if duplicate)
+    let orderExists = await Order.findOne({ orderNumber });
+    let retries = 0;
+    while (orderExists && retries < 5) {
+      orderNumber = generateOrderNumber();
+      orderExists = await Order.findOne({ orderNumber });
+      retries++;
+    }
+    if (orderExists) {
+      throw new ApiError('Failed to generate unique order number', 500);
+    }
+
+    // Create order
+    // Set userId if user is authenticated (from optionalAuth middleware)
+    const order = await Order.create({
+      userId: req.user?._id || undefined, // Set userId if user is logged in
+      competitionId,
+      orderNumber,
+      amountPence,
+      currency: 'GBP',
+      quantity: qty,
+      status: OrderStatus.PENDING,
+      paymentStatus: OrderPaymentStatus.PENDING,
+      ticketsReserved,
+      billingDetails,
+      shippingAddress,
+      marketingOptIn: marketingOptIn || false,
+    });
+
+    // Create payment intent
+    const orderId = String(order._id);
+    const paymentIntent = await stripeService.createPaymentIntent({
+      amount: amountPence, // Already in pence
+      currency: 'gbp',
+      metadata: {
+        orderId: orderId,
+        competitionId: competitionId,
+        userId: req.user?._id?.toString() || 'guest',
+      },
+    });
+
+    // Update order with payment intent
+    order.stripePaymentIntent = paymentIntent.id;
+    await order.save();
+
+    // Create event log
+    await Event.create({
+      type: EventType.ORDER_CREATED,
+      entity: 'order',
+      entityId: order._id,
+      userId: req.user?._id,
+      competitionId,
+      payload: {
+        amountPence,
+        quantity: qty,
+        ticketsReserved,
+      },
+    });
+
+    res.status(201).json(
+      ApiResponse.success(
+        {
+          order: formatOrderResponse(order),
+          clientSecret: paymentIntent.client_secret,
+        },
+        'Order created successfully'
       )
     );
   } catch (error) {

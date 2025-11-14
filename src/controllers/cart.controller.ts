@@ -15,7 +15,7 @@ const formatCartResponse = async (cart: any) => {
   const competitions = await Competition.find({
     _id: { $in: competitionIds },
   }).select(
-    'title slug images ticketPrice maxTickets soldTickets status isActive drawDate category'
+    'title slug images ticketPricePence ticketLimit ticketsSold status isActive drawAt category'
   );
 
   const competitionMap = new Map<string, any>(
@@ -47,12 +47,12 @@ const formatCartResponse = async (cart: any) => {
               title: competition.title,
               slug: competition.slug,
               image: competition.images?.[0]?.url || null,
-              ticketPrice: competition.ticketPrice,
-              maxTickets: competition.maxTickets,
-              soldTickets: competition.soldTickets,
+              ticketPrice: competition.ticketPricePence ? (competition.ticketPricePence / 100).toFixed(2) : '0.00',
+              maxTickets: competition.ticketLimit,
+              soldTickets: competition.ticketsSold,
               status: competition.status,
               isActive: competition.isActive,
-              drawDate: competition.drawDate,
+              drawDate: competition.drawAt,
               category: competition.category,
             }
           : null,
@@ -72,7 +72,7 @@ const ensureCompetitionAvailability = (competition: any) => {
     throw new ApiError('Competition is no longer active', 400);
   }
 
-  if (competition.status !== CompetitionStatus.ACTIVE) {
+  if (competition.status !== CompetitionStatus.LIVE) {
     throw new ApiError('Competition is not open for entries', 400);
   }
 };
@@ -143,15 +143,20 @@ export const addOrUpdateCartItem = async (
 
     ensureCompetitionAvailability(competition);
 
-    const availableTickets =
-      competition.maxTickets - competition.soldTickets;
+    // Calculate available tickets
+    const availableTickets = competition.ticketLimit !== null
+      ? competition.ticketLimit - competition.ticketsSold
+      : Infinity;
 
-    if (parsedQuantity > availableTickets) {
+    if (availableTickets !== Infinity && parsedQuantity > availableTickets) {
       throw new ApiError(
         `Only ${availableTickets} tickets remaining for this competition`,
         400
       );
     }
+
+    // Convert ticket price from pence to pounds
+    const ticketPriceGBP = competition.ticketPricePence / 100;
 
     let cart = await Cart.findOne({ userId: req.user._id });
     if (!cart) {
@@ -167,15 +172,15 @@ export const addOrUpdateCartItem = async (
 
     if (existingItem) {
       existingItem.quantity = parsedQuantity;
-      existingItem.unitPrice = competition.ticketPrice;
+      existingItem.unitPrice = ticketPriceGBP;
       recalculateItemSubtotal(existingItem);
     } else {
       cart.items.push({
         competitionId: competition._id,
         quantity: parsedQuantity,
-        unitPrice: competition.ticketPrice,
+        unitPrice: ticketPriceGBP,
         subtotal: Number(
-          (parsedQuantity * competition.ticketPrice).toFixed(2)
+          (parsedQuantity * ticketPriceGBP).toFixed(2)
         ),
       } as any);
     }
@@ -237,18 +242,23 @@ export const updateCartItem = async (
 
     ensureCompetitionAvailability(competition);
 
-    const availableTickets =
-      competition.maxTickets - competition.soldTickets;
+    // Calculate available tickets
+    const availableTickets = competition.ticketLimit !== null
+      ? competition.ticketLimit - competition.ticketsSold
+      : Infinity;
 
-    if (parsedQuantity > availableTickets) {
+    if (availableTickets !== Infinity && parsedQuantity > availableTickets) {
       throw new ApiError(
         `Only ${availableTickets} tickets remaining for this competition`,
         400
       );
     }
 
+    // Convert ticket price from pence to pounds
+    const ticketPriceGBP = competition.ticketPricePence / 100;
+
     item.quantity = parsedQuantity;
-    item.unitPrice = competition.ticketPrice;
+    item.unitPrice = ticketPriceGBP;
     recalculateItemSubtotal(item);
 
     await cart.save();

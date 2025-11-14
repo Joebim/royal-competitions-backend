@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { Champion, Draw } from '../models';
+import { Champion, Draw, Winner, Competition, User } from '../models';
 import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
 import { getPagination } from '../utils/pagination';
@@ -191,7 +191,7 @@ export const createChampion = async (
   next: NextFunction
 ) => {
   try {
-    const { drawId, winnerName, winnerLocation, testimonial, featured } =
+    const { drawId, winnerName, winnerLocation, testimonial, featured, prizeValue } =
       req.body;
 
     // Verify draw exists
@@ -199,6 +199,26 @@ export const createChampion = async (
     if (!draw) {
       throw new ApiError('Draw not found', 404);
     }
+
+    // Get the primary winner (first result in the draw)
+    const primaryWinner = await Winner.findOne({
+      drawId: draw._id,
+    }).sort({ createdAt: 1 }); // Primary winner is created first
+
+    if (!primaryWinner) {
+      throw new ApiError('No winner found for this draw', 404);
+    }
+
+    // Get competition
+    const competition = await Competition.findById(draw.competitionId);
+    if (!competition) {
+      throw new ApiError('Competition not found', 404);
+    }
+
+    // Get winner user
+    const winnerUser = primaryWinner.userId 
+      ? await User.findById(primaryWinner.userId)
+      : null;
 
     // Upload image if provided
     let imageData = null;
@@ -210,27 +230,40 @@ export const createChampion = async (
         url: uploadedImage.url,
         publicId: uploadedImage.publicId,
       };
-    } else if (draw.imageUrl) {
-      // Use draw image if no new image provided
+    } else if (primaryWinner.proofImageUrl) {
+      // Use winner proof image if no new image provided
       imageData = {
-        url: draw.imageUrl,
-        publicId: draw.publicId || '',
+        url: primaryWinner.proofImageUrl,
+        publicId: '', // Proof image might not have publicId stored
       };
     } else {
       throw new ApiError('Image is required', 400);
     }
 
+    // Build winner name from user or provided
+    const finalWinnerName = winnerName || 
+      (winnerUser ? `${winnerUser.firstName} ${winnerUser.lastName}`.trim() : '') ||
+      'Unknown Winner';
+
+    // Build winner location from provided or use default
+    const finalWinnerLocation = winnerLocation || 'UK';
+
+    // Ensure winnerId is available (required for Champion)
+    if (!primaryWinner.userId) {
+      throw new ApiError('Winner user ID is required to create a champion', 400);
+    }
+
     const championData = {
-      drawId,
+      drawId: draw._id,
       competitionId: draw.competitionId,
-      winnerId: draw.winnerId,
-      winnerName: winnerName || draw.winnerName,
-      winnerLocation: winnerLocation || draw.winnerLocation,
-      prizeName: draw.prizeName,
-      prizeValue: req.body.prizeValue || draw.prizeValue,
+      winnerId: primaryWinner.userId,
+      winnerName: finalWinnerName,
+      winnerLocation: finalWinnerLocation,
+      prizeName: competition.prize,
+      prizeValue: prizeValue || (competition.prizeValue ? String(competition.prizeValue) : undefined),
       testimonial,
       image: imageData,
-      featured: featured || false,
+      featured: featured === 'true' || featured === true,
     };
 
     const champion = await Champion.create(championData);

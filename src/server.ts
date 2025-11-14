@@ -19,11 +19,9 @@ connectDatabase();
 const server = app.listen(PORT, () => {
   logger.info(`Server running in ${config.nodeEnv} mode on port ${PORT}`);
   
-  // Start scheduled jobs
-  if (config.nodeEnv === 'production') {
-    startScheduledJobs();
-    logger.info('Scheduled jobs started');
-  }
+  // Start scheduled jobs (run in all environments)
+  startScheduledJobs();
+  logger.info('Scheduled jobs started');
 });
 
 // Handle unhandled promise rejections

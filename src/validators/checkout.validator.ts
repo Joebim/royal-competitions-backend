@@ -1,11 +1,5 @@
 import Joi from 'joi';
 
-const checkoutItemSchema = Joi.object({
-  competitionId: Joi.string().required(),
-  quantity: Joi.number().integer().min(1).max(20).required(),
-  answer: Joi.string().trim().required(),
-});
-
 const addressSchema = Joi.object({
   line1: Joi.string().trim().required(),
   line2: Joi.string().trim().allow('', null),
@@ -22,10 +16,10 @@ const billingDetailsSchema = Joi.object({
 });
 
 export const createPaymentIntentSchema = Joi.object({
-  items: Joi.array().items(checkoutItemSchema).min(1).required(),
+  orderId: Joi.string().required(),
   billingDetails: billingDetailsSchema.optional(),
-  billingAddress: addressSchema.optional(),
-  orderId: Joi.string().optional(),
+  shippingAddress: addressSchema.optional(),
+  marketingOptIn: Joi.boolean().optional(),
 });
 
 export const confirmCheckoutSchema = Joi.object({

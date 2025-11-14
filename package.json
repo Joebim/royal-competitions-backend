@@ -13,7 +13,10 @@
     "lint:fix": "eslint src --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\"",
     "seed:super-admin": "ts-node src/scripts/seedSuperAdmin.ts",
-    "seed:showcase": "ts-node src/scripts/seedShowcaseData.ts"
+    "seed:showcase": "ts-node src/scripts/seedShowcaseData.ts",
+    "seed:legal-pages": "ts-node src/scripts/seedLegalPagesAndFAQs.ts",
+    "seed:categories": "ts-node src/scripts/seedCategories.ts",
+    "seed:reviews": "ts-node src/scripts/seedReviews.ts"
   },
   "keywords": [
     "competitions",

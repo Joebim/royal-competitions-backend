@@ -42,7 +42,7 @@ export const getDashboardSummary = async (
     ] = await Promise.all([
       Competition.countDocuments({}),
       Competition.countDocuments({
-        status: CompetitionStatus.ACTIVE,
+        status: CompetitionStatus.LIVE,
         isActive: true,
       }),
       Draw.countDocuments({}),
@@ -59,39 +59,50 @@ export const getDashboardSummary = async (
         {
           $group: {
             _id: null,
-            total: { $sum: '$total' },
+            total: { $sum: '$amountPence' }, // Use amountPence instead of total
           },
         },
       ]),
       Draw.find({})
+        .populate('competitionId', 'title prize')
         .sort({ createdAt: -1 })
         .limit(5)
         .lean(),
       Order.find({ paymentStatus: OrderPaymentStatus.PAID })
+        .populate('competitionId', 'title')
         .sort({ updatedAt: -1 })
         .limit(5)
         .lean(),
     ]);
 
-    const revenueTotal = revenueAggregate[0]?.total || 0;
+    // Convert revenue from pence to pounds
+    const revenueTotalPence = revenueAggregate[0]?.total || 0;
+    const revenueTotal = revenueTotalPence / 100;
 
     const recentActivity = [
-      ...recentDraws.map((draw) => ({
+      ...recentDraws.map((draw: any) => ({
         type: 'draw_created',
-        description: `Draw completed for ${draw.prizeName}`,
+        description: `Draw completed for ${draw.competitionId?.title || 'Competition'}`,
         data: {
-          prizeName: draw.prizeName,
-          winnerName: draw.winnerName,
-          winnerLocation: draw.winnerLocation,
+          competitionId: draw.competitionId?._id || draw.competitionId,
+          competitionTitle: draw.competitionId?.title || 'Unknown',
+          prize: draw.competitionId?.prize || 'Unknown',
+          drawTime: draw.drawTime,
+          drawMethod: draw.drawMethod,
         },
-        timestamp: draw.createdAt,
+        timestamp: draw.createdAt || draw.drawTime,
       })),
-      ...recentOrders.map((order) => ({
+      ...recentOrders.map((order: any) => ({
         type: 'order_paid',
-        description: `Order ${order.orderNumber} paid`,
+        description: `Order paid for ${order.competitionId?.title || 'Competition'}`,
         data: {
-          total: order.total,
+          orderId: order._id,
+          competitionId: order.competitionId?._id || order.competitionId,
+          competitionTitle: order.competitionId?.title || 'Unknown',
+          amountPence: order.amountPence,
+          amountGBP: (order.amountPence / 100).toFixed(2),
           currency: order.currency,
+          quantity: order.quantity,
         },
         timestamp: order.updatedAt,
       })),

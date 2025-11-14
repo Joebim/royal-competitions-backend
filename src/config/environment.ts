@@ -32,6 +32,10 @@ interface Config {
     serverPrefix: string;
     audienceId: string;
   };
+  klaviyo: {
+    publicKey: string;
+    privateKey: string;
+  };
   email: {
     service: string;
     host: string;
@@ -94,6 +98,10 @@ export const config: Config = {
     apiKey: process.env.MAILCHIMP_API_KEY || '',
     serverPrefix: process.env.MAILCHIMP_SERVER_PREFIX || 'us1',
     audienceId: process.env.MAILCHIMP_AUDIENCE_ID || '',
+  },
+  klaviyo: {
+    publicKey: process.env.KLAVIYO_PUBLIC_KEY || '',
+    privateKey: process.env.KLAVIYO_PRIVATE_KEY || '',
   },
   email: {
     service: process.env.EMAIL_SERVICE || 'gmail',

@@ -14,6 +14,9 @@ import contentRoutes from './content.routes';
 import reviewRoutes from './review.routes';
 import statsRoutes from './stats.routes';
 import adminRoutes from './admin.routes';
+import winnerRoutes from './winner.routes';
+import ticketRoutes from './ticket.routes';
+import categoryRoutes from './category.routes';
 
 const router = Router();
 
@@ -33,6 +36,9 @@ router.use('/content', contentRoutes);
 router.use('/reviews', reviewRoutes);
 router.use('/stats', statsRoutes);
 router.use('/admin', adminRoutes);
+router.use('/winners', winnerRoutes);
+router.use('/tickets', ticketRoutes);
+router.use('/categories', categoryRoutes);
 
 export default router;
 

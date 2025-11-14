@@ -10,6 +10,9 @@ import {
   updateCompetitionStatus,
   validateCompetitionAnswer,
 } from '../controllers/competition.controller';
+import { holdTickets, getCompetitionEntryList } from '../controllers/ticket.controller';
+import { getCompetitionDraws } from '../controllers/draw.controller';
+import { getCompetitionWinners } from '../controllers/winner.controller';
 import { protect, adminOnly, superAdminOnly } from '../middleware/auth.middleware';
 import { upload } from '../middleware/upload.middleware';
 import { validate } from '../middleware/validation.middleware';
@@ -25,12 +28,20 @@ const router = Router();
 router.get('/', getCompetitions);
 router.get('/featured', getFeaturedCompetitions);
 router.get('/:id/progress', getCompetitionProgress);
+router.get('/:id/entry-list', getCompetitionEntryList);
+router.get('/:id/draws', getCompetitionDraws);
+router.get('/:id/winners', getCompetitionWinners);
+router.get('/:id', getCompetition);
+
+// Protected routes - ticket reservation
+router.post('/:id/hold', protect, holdTickets);
+
+// Public route for entry list (legacy support)
 router.post(
   '/:id/entries/validate-answer',
   validate(validateCompetitionAnswerSchema),
   validateCompetitionAnswer
 );
-router.get('/:id', getCompetition);
 
 // Admin routes (legacy support)
 router.post(

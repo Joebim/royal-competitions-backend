@@ -1,26 +1,15 @@
 import { Router } from 'express';
 import {
-  getDraws,
+  getAllDraws,
   getDraw,
-  createDraw,
-  updateDraw,
-  deleteDraw,
-  getRecentDraws,
+  verifyDraw,
 } from '../controllers/draw.controller';
-import { protect, adminOnly } from '../middleware/auth.middleware';
-import { validate } from '../middleware/validation.middleware';
-import { createDrawSchema, updateDrawSchema } from '../validators/draw.validator';
 
 const router = Router();
 
 // Public routes
-router.get('/', getDraws);
-router.get('/recent', getRecentDraws);
+router.get('/', getAllDraws); // Must be before /:id to avoid route conflict
 router.get('/:id', getDraw);
-
-// Protected routes (Admin only)
-router.post('/', protect, adminOnly, validate(createDrawSchema), createDraw);
-router.put('/:id', protect, adminOnly, validate(updateDrawSchema), updateDraw);
-router.delete('/:id', protect, adminOnly, deleteDraw);
+router.get('/:id/verify', verifyDraw);
 
 export default router;

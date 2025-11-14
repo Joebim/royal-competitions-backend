@@ -46,8 +46,8 @@ export const getSiteStats = async (
     }
 
     const [competitions, draws, champions] = await Promise.all([
-      Competition.countDocuments({ status: CompetitionStatus.COMPLETED }),
-      Draw.countDocuments({ isActive: true }),
+      Competition.countDocuments({ status: CompetitionStatus.DRAWN }),
+      Draw.countDocuments({}), // Draw model doesn't have isActive field
       Champion.countDocuments({ isActive: true }),
     ]);
 
