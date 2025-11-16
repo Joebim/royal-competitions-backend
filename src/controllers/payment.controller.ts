@@ -82,6 +82,7 @@ export const handleWebhook = async (req: Request, res: Response) => {
     const event = stripeService.constructWebhookEvent(req.body, sig);
 
     logger.info(`Webhook received: ${event.type}`);
+    console.log('[Stripe Webhook] Event received:', event.type);
 
     switch (event.type) {
       case 'payment_intent.succeeded':
@@ -100,9 +101,12 @@ export const handleWebhook = async (req: Request, res: Response) => {
         logger.info(`Unhandled event type: ${event.type}`);
     }
 
-    res.json({ received: true });
+    const responseBody = { received: true };
+    console.log('[Stripe Webhook] Responding with status 200:', responseBody);
+    res.status(200).json(responseBody);
   } catch (error: any) {
     logger.error('Webhook error:', error);
+    console.log('[Stripe Webhook] Error:', error?.message || error);
     res.status(400).send(`Webhook Error: ${error.message}`);
   }
 };

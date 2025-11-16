@@ -418,7 +418,8 @@ Cookie: authToken=your_token_here
 }
 ```
 
-**Note:** 
+**Note:**
+
 - This endpoint automatically closes the competition if it's still `live`
 - Primary winners are automatically notified via email
 - The competition status is updated to `drawn`
@@ -507,6 +508,7 @@ Cookie: authToken=your_token_here
 ```
 
 **Note:**
+
 - This creates a manual draw record with a single winner
 - The winner is automatically notified if they have an email
 - The competition status is updated to `drawn`
@@ -984,6 +986,7 @@ const createChampion = async (formData) => {
    - No admin action required
 
    **Admin-Triggered Draw:**
+
    ```bash
    POST /api/v1/admin/competitions/:id/run-draw
    {
@@ -995,6 +998,7 @@ const createChampion = async (formData) => {
    ```
 
    **Manual Winner Entry:**
+
    ```bash
    POST /api/v1/admin/competitions/:id/add-winner
    {
@@ -1185,7 +1189,11 @@ const runDraw = async (competitionId: string, drawData: any) => {
 **Add manual winner (Admin):**
 
 ```typescript
-const addManualWinner = async (competitionId: string, ticketNumber: number, options?: any) => {
+const addManualWinner = async (
+  competitionId: string,
+  ticketNumber: number,
+  options?: any
+) => {
   const response = await fetch(
     `http://localhost:5000/api/v1/admin/competitions/${competitionId}/add-winner`,
     {

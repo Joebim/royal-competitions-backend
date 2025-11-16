@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   createCompetition,
   deleteCompetition,
+  duplicateCompetition,
   getAdminCompetitions,
   getCompetition,
   getCompetitionEntries,
@@ -36,6 +37,15 @@ import {
 } from '../controllers/user.controller';
 import { getDashboardSummary } from '../controllers/admin.controller';
 import {
+  getAllActivities,
+  getRecentActivities,
+  getActivitiesByType,
+  getActivitiesByEntity,
+  getActivitiesByUser,
+  getActivitiesByCompetition,
+  getActivityStats,
+} from '../controllers/activity.controller';
+import {
   protect,
   adminOnly,
   superAdminOnly,
@@ -69,6 +79,8 @@ import {
   deleteFAQ,
   updateHeroCompetition,
   removeHeroCompetition,
+  getAboutPageForAdmin,
+  createOrUpdateAboutPage,
 } from '../controllers/content.controller';
 import {
   getAllCategoriesForAdmin,
@@ -83,6 +95,8 @@ import {
   createFAQSchema,
   updateFAQSchema,
   updateHeroCompetitionSchema,
+  createAboutPageSchema,
+  updateAboutPageSchema,
 } from '../validators/content.validator';
 import {
   createCategorySchema,
@@ -110,6 +124,15 @@ router.use(protect, adminOnly);
 
 router.get('/dashboard/summary', getDashboardSummary);
 
+// Activity tracking
+router.get('/activities', getAllActivities);
+router.get('/activities/recent', getRecentActivities);
+router.get('/activities/stats', getActivityStats);
+router.get('/activities/type/:type', getActivitiesByType);
+router.get('/activities/entity/:entity/:entityId', getActivitiesByEntity);
+router.get('/activities/user/:userId', getActivitiesByUser);
+router.get('/activities/competition/:competitionId', getActivitiesByCompetition);
+
 // Competition management
 router.get('/competitions', getAdminCompetitions);
 router.post(
@@ -126,6 +149,7 @@ router.put(
   updateCompetition
 );
 router.patch('/competitions/:id/status', updateCompetitionStatus);
+router.post('/competitions/:id/duplicate', duplicateCompetition);
 router.get('/competitions/:id/entries', getCompetitionEntries);
 router.delete('/competitions/:id', superAdminOnly, deleteCompetition);
 
@@ -201,6 +225,19 @@ router.patch(
   updateHeroCompetition
 );
 router.delete('/content/hero', removeHeroCompetition);
+
+// Content management - About Page
+router.get('/content/about', getAboutPageForAdmin);
+router.post(
+  '/content/about',
+  validate(createAboutPageSchema),
+  createOrUpdateAboutPage
+);
+router.put(
+  '/content/about',
+  validate(updateAboutPageSchema),
+  createOrUpdateAboutPage
+);
 
 // Category management
 router.get('/categories', getAllCategoriesForAdmin);

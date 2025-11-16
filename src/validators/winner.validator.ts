@@ -5,6 +5,10 @@ export const updateWinnerSchema = Joi.object({
   notifiedAt: Joi.date().optional(),
   claimed: Joi.boolean().optional(),
   claimedAt: Joi.date().optional(),
+  verified: Joi.boolean().optional(),
+  verifiedAt: Joi.date().optional(),
+  publicAnnouncement: Joi.string().trim().max(500).allow('', null).optional(),
+  prizeValue: Joi.number().min(0).optional(),
   proofImageUrl: Joi.string().uri().trim().allow('', null).optional(),
   drawVideoUrl: Joi.string().uri().trim().allow('', null).optional(),
   testimonial: Joi.object({
@@ -15,4 +19,3 @@ export const updateWinnerSchema = Joi.object({
     .allow(null)
     .optional(),
 });
-

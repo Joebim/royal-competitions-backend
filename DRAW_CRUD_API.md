@@ -16,25 +16,25 @@ http://localhost:5000/api/v1
 
 ### Draw Fields
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `_id` | ObjectId | Auto | Draw unique identifier |
-| `competitionId` | ObjectId | ✅ Yes | Reference to Competition |
-| `drawTime` | Date | ✅ Yes | When the draw occurred |
-| `seed` | String | ✅ Yes | Hex string seed for RNG (audit trail) |
-| `algorithm` | String | ✅ Yes | Algorithm used (default: 'hmac-sha256-v1') |
-| `snapshotTicketCount` | Number | ✅ Yes | Number of tickets at snapshot time |
-| `snapshotReference` | String | No | Path/URL to snapshot file |
-| `snapshot` | Mixed | No | Embedded snapshot data (JSON) |
-| `result` | Array | ✅ Yes | Array of winners (primary + reserves) |
-| `drawMethod` | Enum | ✅ Yes | `automatic`, `admin_triggered`, or `manual` |
-| `initiatedBy` | ObjectId | No | Admin who triggered (if admin_triggered) |
-| `notes` | String | No | Manual entry notes |
-| `evidenceUrl` | String | No | URL to draw video/evidence (for manual) |
-| `liveUrl` | String | No | URL to watch the draw live (YouTube, Vimeo, etc.) |
-| `urlType` | Enum | No | `youtube`, `vimeo`, `twitch`, `custom`, or `other` |
-| `createdAt` | Date | Auto | Creation timestamp |
-| `updatedAt` | Date | Auto | Last update timestamp |
+| Field                 | Type     | Required | Description                                        |
+| --------------------- | -------- | -------- | -------------------------------------------------- |
+| `_id`                 | ObjectId | Auto     | Draw unique identifier                             |
+| `competitionId`       | ObjectId | ✅ Yes   | Reference to Competition                           |
+| `drawTime`            | Date     | ✅ Yes   | When the draw occurred                             |
+| `seed`                | String   | ✅ Yes   | Hex string seed for RNG (audit trail)              |
+| `algorithm`           | String   | ✅ Yes   | Algorithm used (default: 'hmac-sha256-v1')         |
+| `snapshotTicketCount` | Number   | ✅ Yes   | Number of tickets at snapshot time                 |
+| `snapshotReference`   | String   | No       | Path/URL to snapshot file                          |
+| `snapshot`            | Mixed    | No       | Embedded snapshot data (JSON)                      |
+| `result`              | Array    | ✅ Yes   | Array of winners (primary + reserves)              |
+| `drawMethod`          | Enum     | ✅ Yes   | `automatic`, `admin_triggered`, or `manual`        |
+| `initiatedBy`         | ObjectId | No       | Admin who triggered (if admin_triggered)           |
+| `notes`               | String   | No       | Manual entry notes                                 |
+| `evidenceUrl`         | String   | No       | URL to draw video/evidence (for manual)            |
+| `liveUrl`             | String   | No       | URL to watch the draw live (YouTube, Vimeo, etc.)  |
+| `urlType`             | Enum     | No       | `youtube`, `vimeo`, `twitch`, `custom`, or `other` |
+| `createdAt`           | Date     | Auto     | Creation timestamp                                 |
+| `updatedAt`           | Date     | Auto     | Last update timestamp                              |
 
 ### Draw Result Structure
 
@@ -639,6 +639,7 @@ Cookie: authToken=your_token_here
 **Error Responses:**
 
 **400 Bad Request - Competition already drawn:**
+
 ```json
 {
   "success": false,
@@ -647,6 +648,7 @@ Cookie: authToken=your_token_here
 ```
 
 **400 Bad Request - Competition not ready:**
+
 ```json
 {
   "success": false,
@@ -748,6 +750,7 @@ Cookie: authToken=your_token_here
 **Error Responses:**
 
 **404 Not Found - Ticket not found:**
+
 ```json
 {
   "success": false,
@@ -756,6 +759,7 @@ Cookie: authToken=your_token_here
 ```
 
 **400 Bad Request - Missing ticket number:**
+
 ```json
 {
   "success": false,
@@ -871,7 +875,11 @@ const runDraw = async (competitionId: string, drawData: any) => {
 };
 
 // Add manual winner
-const addManualWinner = async (competitionId: string, ticketNumber: number, options?: any) => {
+const addManualWinner = async (
+  competitionId: string,
+  ticketNumber: number,
+  options?: any
+) => {
   const response = await api.post(
     `/admin/competitions/${competitionId}/add-winner`,
     {
@@ -953,12 +961,9 @@ const getDraws = async (page = 1, limit = 10) => {
 
 ```typescript
 const getDraw = async (drawId: string) => {
-  const response = await fetch(
-    `http://localhost:5000/api/v1/draws/${drawId}`,
-    {
-      credentials: 'include',
-    }
-  );
+  const response = await fetch(`http://localhost:5000/api/v1/draws/${drawId}`, {
+    credentials: 'include',
+  });
   const data = await response.json();
   return data;
 };
@@ -1085,4 +1090,3 @@ If you encounter issues:
 4. Check Swagger docs - Interactive API documentation at `/api-docs`
 
 For additional help, contact the backend team or check the server logs.
-

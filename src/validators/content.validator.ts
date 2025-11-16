@@ -5,7 +5,7 @@ const legalSectionSchema = Joi.object({
   body: Joi.array().items(Joi.string().trim().min(1)).min(1).required(),
   list: Joi.object({
     title: Joi.string().trim().max(200).optional(),
-    items: Joi.array().items(Joi.string().trim().min(1)).min(1).optional(),
+    items: Joi.array().items(Joi.string().trim().min(1)).optional(),
   }).optional(),
 });
 
@@ -111,5 +111,47 @@ export const updateHeroCompetitionSchema = Joi.object({
       'string.empty': 'Competition ID is required',
       'any.required': 'Competition ID is required',
     }),
+});
+
+// About Page Validators
+const companyDetailsSchema = Joi.object({
+  companyName: Joi.string().trim().min(1).max(200).required(),
+  tradingAs: Joi.string().trim().min(1).max(200).required(),
+  companyNumber: Joi.string().trim().min(1).max(50).required(),
+  location: Joi.string().trim().min(1).max(200).required(),
+});
+
+const featureSchema = Joi.object({
+  icon: Joi.string().trim().min(1).max(100).required(),
+  title: Joi.string().trim().min(1).max(200).required(),
+  description: Joi.string().trim().min(1).max(500).required(),
+});
+
+export const createAboutPageSchema = Joi.object({
+  hero: Joi.object({
+    title: Joi.string().trim().min(1).max(200).required(),
+    subtitle: Joi.string().trim().min(1).max(500).required(),
+  }).required(),
+  story: Joi.object({
+    heading: Joi.string().trim().min(1).max(200).required(),
+    paragraphs: Joi.array().items(Joi.string().trim().min(1)).min(1).required(),
+  }).required(),
+  companyDetails: companyDetailsSchema.required(),
+  features: Joi.array().items(featureSchema).min(1).required(),
+  isActive: Joi.boolean().optional(),
+});
+
+export const updateAboutPageSchema = Joi.object({
+  hero: Joi.object({
+    title: Joi.string().trim().min(1).max(200).optional(),
+    subtitle: Joi.string().trim().min(1).max(500).optional(),
+  }).optional(),
+  story: Joi.object({
+    heading: Joi.string().trim().min(1).max(200).optional(),
+    paragraphs: Joi.array().items(Joi.string().trim().min(1)).min(1).optional(),
+  }).optional(),
+  companyDetails: companyDetailsSchema.optional(),
+  features: Joi.array().items(featureSchema).min(1).optional(),
+  isActive: Joi.boolean().optional(),
 });
 

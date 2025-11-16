@@ -728,14 +728,32 @@ export const updateCompetitionStatus = async (
   next: NextFunction
 ) => {
   try {
-    const { status } = req.body;
-    if (!status) {
-      throw new ApiError('Status is required', 400);
+    const { status, isActive } = req.body;
+
+    if (status === undefined && isActive === undefined) {
+      throw new ApiError('Status or isActive is required', 400);
+    }
+
+    const updateData: any = {};
+    if (status !== undefined) {
+      updateData.status = status;
+      // Auto-set isActive based on status
+      if (status === CompetitionStatus.LIVE) {
+        updateData.isActive = true;
+      } else if (
+        status === CompetitionStatus.DRAFT ||
+        status === CompetitionStatus.CANCELLED
+      ) {
+        updateData.isActive = false;
+      }
+    }
+    if (isActive !== undefined) {
+      updateData.isActive = isActive;
     }
 
     const competition = await Competition.findByIdAndUpdate(
       req.params.id,
-      { status },
+      updateData,
       { new: true, runValidators: true }
     );
 
@@ -749,6 +767,91 @@ export const updateCompetitionStatus = async (
         'Competition status updated'
       )
     );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Duplicate a competition (Admin)
+ * @route   POST /api/v1/admin/competitions/:id/duplicate
+ * @access  Private/Admin
+ */
+export const duplicateCompetition = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    if (!req.user) {
+      throw new ApiError('Not authorized', 401);
+    }
+
+    const originalCompetition = await Competition.findById(req.params.id);
+
+    if (!originalCompetition) {
+      throw new ApiError('Competition not found', 404);
+    }
+
+    // Create a copy of the competition
+    const competitionData: any = {
+      title: `${originalCompetition.title} (Copy)`,
+      shortDescription: originalCompetition.shortDescription,
+      description: originalCompetition.description,
+      prize: originalCompetition.prize,
+      prizeValue: originalCompetition.prizeValue,
+      cashAlternative: originalCompetition.cashAlternative,
+      cashAlternativeDetails: originalCompetition.cashAlternativeDetails,
+      originalPrice: originalCompetition.originalPrice,
+      ticketPricePence: originalCompetition.ticketPricePence,
+      ticketLimit: originalCompetition.ticketLimit,
+      ticketsSold: 0, // Reset tickets sold
+      status: CompetitionStatus.DRAFT, // Always start as draft
+      drawMode: originalCompetition.drawMode,
+      drawAt: originalCompetition.drawAt,
+      freeEntryEnabled: originalCompetition.freeEntryEnabled,
+      noPurchasePostalAddress: originalCompetition.noPurchasePostalAddress,
+      termsUrl: originalCompetition.termsUrl,
+      question: originalCompetition.question,
+      features: originalCompetition.features,
+      included: originalCompetition.included,
+      specifications: originalCompetition.specifications,
+      tags: originalCompetition.tags,
+      termsAndConditions: originalCompetition.termsAndConditions,
+      category: originalCompetition.category,
+      featured: false, // Don't duplicate featured status
+      isActive: false, // Always start inactive
+      createdBy: req.user._id as any,
+      nextTicketNumber: 1, // Reset ticket numbering
+    };
+
+    // Copy images (reference, not duplicate upload)
+    if (originalCompetition.images && originalCompetition.images.length > 0) {
+      competitionData.images = originalCompetition.images.map((img) => ({
+        url: img.url,
+        publicId: img.publicId,
+        thumbnail: img.thumbnail,
+      }));
+    }
+
+    // Generate new slug
+    competitionData.slug = slugify(competitionData.title);
+
+    // Ensure category exists and update usage count
+    if (competitionData.category) {
+      await ensureCategoryExists(competitionData.category, req.user._id);
+    }
+
+    const newCompetition = await Competition.create(competitionData);
+
+    res
+      .status(201)
+      .json(
+        ApiResponse.success(
+          { competition: sanitizeCompetition(newCompetition) },
+          'Competition duplicated successfully'
+        )
+      );
   } catch (error) {
     next(error);
   }

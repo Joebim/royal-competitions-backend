@@ -10,6 +10,7 @@ import {
   LegalPage,
   FAQ,
   Winner,
+  AboutPage,
 } from '../models';
 import { CompetitionStatus } from '../models/Competition.model';
 import { ApiResponse } from '../utils/apiResponse';
@@ -278,6 +279,33 @@ export const getPageContent = async (
       ApiResponse.success(
         { page: pageData },
         'Page content retrieved successfully'
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Get all legal pages (Public - only active pages)
+ * @route   GET /api/v1/content/pages
+ * @access  Public
+ */
+export const getAllLegalPagesPublic = async (
+  _req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const pages = await LegalPage.find({ isActive: true })
+      .select('slug title subtitle updatedAt')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json(
+      ApiResponse.success(
+        { pages },
+        'Legal pages retrieved successfully'
       )
     );
   } catch (error) {
@@ -749,6 +777,150 @@ export const removeHeroCompetition = async (
     res.json(
       ApiResponse.success(null, 'Hero competition reset to automatic selection')
     );
+  } catch (error) {
+    next(error);
+  }
+};
+
+// About Page Public Operations
+
+/**
+ * @desc    Get about page content (Public)
+ * @route   GET /api/v1/content/about
+ * @access  Public
+ */
+export const getAboutPage = async (
+  _req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const aboutPage = await AboutPage.findOne({ isActive: true })
+      .select('-__v -createdBy -updatedBy')
+      .lean();
+
+    if (!aboutPage) {
+      throw new ApiError('About page not found', 404, true, {
+        about: ['About page content is not available'],
+      });
+    }
+
+    res.json(
+      ApiResponse.success(
+        { about: aboutPage },
+        'About page content retrieved successfully'
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+// About Page Admin CRUD Operations
+
+/**
+ * @desc    Get about page content (Admin)
+ * @route   GET /api/v1/admin/content/about
+ * @access  Private/Admin
+ */
+export const getAboutPageForAdmin = async (
+  _req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const aboutPage = await AboutPage.findOne().select('-__v').lean();
+
+    if (!aboutPage) {
+      res.json(
+        ApiResponse.success(
+          { about: null },
+          'No about page content found'
+        )
+      );
+      return;
+    }
+
+    res.json(
+      ApiResponse.success(
+        { about: aboutPage },
+        'About page content retrieved successfully'
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Create or update about page content (Admin)
+ * @route   POST /api/v1/admin/content/about
+ * @access  Private/Admin
+ */
+export const createOrUpdateAboutPage = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { hero, story, companyDetails, features, isActive } = req.body;
+
+    // Check if about page already exists
+    let aboutPage = await AboutPage.findOne();
+
+    if (aboutPage) {
+      // Update existing page
+      if (hero !== undefined) {
+        if (hero.title !== undefined) aboutPage.hero.title = hero.title;
+        if (hero.subtitle !== undefined) aboutPage.hero.subtitle = hero.subtitle;
+      }
+      if (story !== undefined) {
+        if (story.heading !== undefined) aboutPage.story.heading = story.heading;
+        if (story.paragraphs !== undefined)
+          aboutPage.story.paragraphs = story.paragraphs;
+      }
+      if (companyDetails !== undefined) {
+        aboutPage.companyDetails = companyDetails;
+      }
+      if (features !== undefined) {
+        aboutPage.features = features;
+      }
+      if (isActive !== undefined) {
+        aboutPage.isActive = isActive;
+      }
+      if (req.user) {
+        aboutPage.updatedBy = req.user._id as any;
+      }
+
+      await aboutPage.save();
+
+      res.json(
+        ApiResponse.success(
+          { about: aboutPage },
+          'About page updated successfully'
+        )
+      );
+    } else {
+      // Create new page
+      aboutPage = await AboutPage.create({
+        hero,
+        story,
+        companyDetails,
+        features,
+        isActive: isActive !== undefined ? isActive : true,
+        createdBy: req.user?._id as mongoose.Types.ObjectId | undefined,
+        updatedBy: req.user?._id as mongoose.Types.ObjectId | undefined,
+      });
+
+      res
+        .status(201)
+        .json(
+          ApiResponse.success(
+            { about: aboutPage },
+            'About page created successfully'
+          )
+        );
+    }
   } catch (error) {
     next(error);
   }

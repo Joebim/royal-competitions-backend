@@ -16,7 +16,8 @@
     "seed:showcase": "ts-node src/scripts/seedShowcaseData.ts",
     "seed:legal-pages": "ts-node src/scripts/seedLegalPagesAndFAQs.ts",
     "seed:categories": "ts-node src/scripts/seedCategories.ts",
-    "seed:reviews": "ts-node src/scripts/seedReviews.ts"
+    "seed:reviews": "ts-node src/scripts/seedReviews.ts",
+    "seed:about": "ts-node src/scripts/seedAboutPage.ts"
   },
   "keywords": [
     "competitions",

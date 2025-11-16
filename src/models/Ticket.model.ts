@@ -6,6 +6,7 @@ export enum TicketStatus {
   CANCELLED = 'cancelled',
   WINNER = 'winner',
   REFUNDED = 'refunded',
+  INVALID = 'invalid',
 }
 
 export interface ITicket extends Document {

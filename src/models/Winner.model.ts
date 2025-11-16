@@ -7,11 +7,15 @@ export interface IWinner extends Document {
   userId?: mongoose.Types.ObjectId;
   ticketNumber: number;
   prize: string;
+  prizeValue?: number; // Prize value for display
   notified: boolean;
   notifiedAt?: Date;
   claimed: boolean;
   claimedAt?: Date;
   claimCode: string; // Unique code for winner verification
+  verified: boolean; // Verification status
+  verifiedAt?: Date; // When winner was verified
+  publicAnnouncement?: string; // Public announcement text for winners page
   proofImageUrl?: string; // URL to winner proof image
   drawVideoUrl?: string; // URL to draw video
   testimonial?: {
@@ -70,6 +74,20 @@ const winnerSchema = new Schema<IWinner>(
       unique: true, // unique: true automatically creates an index
       trim: true,
     },
+    verified: {
+      type: Boolean,
+      default: false,
+    },
+    verifiedAt: Date,
+    publicAnnouncement: {
+      type: String,
+      trim: true,
+      maxlength: [500, 'Public announcement cannot exceed 500 characters'],
+    },
+    prizeValue: {
+      type: Number,
+      min: [0, 'Prize value must be zero or greater'],
+    },
     proofImageUrl: {
       type: String,
       trim: true,
@@ -106,8 +124,12 @@ winnerSchema.pre('save', async function (next) {
   if (!this.claimCode) {
     // Generate unique claim code: ABCD-1234 format
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    const part1 = Array.from({ length: 4 }, () => chars.charAt(Math.floor(Math.random() * chars.length))).join('');
-    const part2 = Array.from({ length: 4 }, () => chars.charAt(Math.floor(Math.random() * chars.length))).join('');
+    const part1 = Array.from({ length: 4 }, () =>
+      chars.charAt(Math.floor(Math.random() * chars.length))
+    ).join('');
+    const part2 = Array.from({ length: 4 }, () =>
+      chars.charAt(Math.floor(Math.random() * chars.length))
+    ).join('');
     this.claimCode = `${part1}-${part2}`;
   }
   next();
@@ -116,7 +138,3 @@ winnerSchema.pre('save', async function (next) {
 const Winner: Model<IWinner> = mongoose.model<IWinner>('Winner', winnerSchema);
 
 export default Winner;
-
-
-
-
