@@ -1,14 +1,5 @@
 import Joi from 'joi';
 
-const legalSectionSchema = Joi.object({
-  heading: Joi.string().trim().min(1).max(200).required(),
-  body: Joi.array().items(Joi.string().trim().min(1)).min(1).required(),
-  list: Joi.object({
-    title: Joi.string().trim().max(200).optional(),
-    items: Joi.array().items(Joi.string().trim().min(1)).optional(),
-  }).optional(),
-});
-
 const validSlugs = [
   'terms-and-conditions',
   'terms-of-use',
@@ -38,14 +29,14 @@ export const createLegalPageSchema = Joi.object({
     .required(),
   title: Joi.string().trim().min(1).max(200).required(),
   subtitle: Joi.string().trim().max(500).optional(),
-  sections: Joi.array().items(legalSectionSchema).min(1).required(),
+  content: Joi.string().trim().min(1).required(),
   isActive: Joi.boolean().optional(),
 });
 
 export const updateLegalPageSchema = Joi.object({
   title: Joi.string().trim().min(1).max(200).optional(),
   subtitle: Joi.string().trim().max(500).allow(null, '').optional(),
-  sections: Joi.array().items(legalSectionSchema).min(1).optional(),
+  content: Joi.string().trim().min(1).optional(),
   isActive: Joi.boolean().optional(),
 });
 

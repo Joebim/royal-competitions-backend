@@ -22,108 +22,156 @@ const seedLegalPages = async () => {
     }
     const adminUserId = adminUser?._id;
 
-    // Legal Pages Data
+    // Helper to convert structured sections into simple rich text (HTML)
+    const buildHtmlFromSections = (sections: any[]): string => {
+      return sections
+        .map((section) => {
+          const parts: string[] = [];
+          if (section.heading) {
+            parts.push(`<h2>${section.heading}</h2>`);
+          }
+          if (section.body && Array.isArray(section.body)) {
+            section.body.forEach((p: string) => {
+              parts.push(`<p>${p}</p>`);
+            });
+          }
+          if (
+            section.list &&
+            section.list.items &&
+            section.list.items.length > 0
+          ) {
+            if (section.list.title) {
+              parts.push(`<h3>${section.list.title}</h3>`);
+            }
+            const itemsHtml = section.list.items
+              .map((item: string) => `<li>${item}</li>`)
+              .join('');
+            parts.push(`<ul>${itemsHtml}</ul>`);
+          }
+          return parts.join('\n');
+        })
+        .join('\n\n');
+    };
+
+    // Legal Pages Data (structured, converted to rich text content before saving)
     const legalPagesData = [
       {
         slug: 'terms-and-conditions',
         title: 'Terms and Conditions',
-        subtitle: 'Please read these terms carefully before using our service',
+        subtitle:
+          'Please read these terms carefully before entering our competitions',
         isActive: true,
         sections: [
           {
-            heading: '1. Acceptance of Terms',
+            heading: '1. The Promoter',
             body: [
-              'By accessing and using Royal Competitions website and services, you accept and agree to be bound by the terms and provision of this agreement.',
-              'If you do not agree to abide by the above, please do not use this service.',
+              'The Promoter is: Ace Comps Group Ltd Company Number SC686957 and whose registered office is at 6 Brockwood Place, Aberdeen, AB21 0JU, United Kingdom.',
+              'Our correspondence address is 6 Brockwood Place, Aberdeen, AB21 0JU, United Kingdom.',
+              'If you wish to contact us for any reason, please email info@acecompetitions.co.uk.',
             ],
           },
           {
-            heading: '2. Eligibility',
+            heading: '2. The competition',
             body: [
-              'You must be at least 18 years old and a resident of the United Kingdom to participate in our competitions.',
-              'You must have a valid UK address for prize delivery.',
-              'Employees of Royal Competitions and their immediate family members are not eligible to participate.',
+              '2.1. These terms and conditions apply to all competitions listed on the Promoter’s website at https://www.royalcompetitions.co.uk (the \"Website\").',
+              '2.2. All competitions are skill-based competitions. Entry fees for online entries are payable each time you enter. Where the Promoter offers an easy or multiple choice question, a free entry route is available.',
+              '2.3. To be in with a chance of winning, everyone who enters the competition (an \"Entrant\") will be required to correctly answer a question or solve a problem set by the Promoter (the \"Competition Question\").',
             ],
           },
           {
-            heading: '3. Competition Entry',
+            heading: '3. How to enter',
             body: [
-              'Entry to competitions is by purchase of tickets only, unless otherwise stated.',
-              'Each ticket purchase includes one entry into the competition.',
-              "Free entry methods are available as per UK competition regulations. Details can be found in each competition's terms.",
-            ],
-            list: {
-              title: 'By entering a competition, you agree to:',
-              items: [
-                'Provide accurate and truthful information',
-                'Comply with all competition rules',
-                'Accept the decision of the draw as final',
-                'Allow your name and location to be published if you win',
-              ],
-            },
-          },
-          {
-            heading: '4. Payment and Refunds',
-            body: [
-              'All payments are processed securely through Stripe.',
-              'Ticket purchases are final and non-refundable, except as required by law.',
-              'If a competition is cancelled before the draw date, all ticket purchases will be refunded.',
+              '3.1. The competition will run from and including the opening and closing dates specified on the Website. These dates shall be referred to as the \"Opening Date\" and \"Closing Date\" respectively. All times and dates referred to are the times and dates in London, England.',
+              '3.2. If it is absolutely necessary to do so, the Promoter reserves the right to change the Opening and Closing Dates. If the Promoter does change the Opening Date and/or the Closing Date of a competition, the new details will be displayed on the Website. The Promoter will not extend the Closing Date simply to sell more entries.',
+              '3.3. All competition entries must be received by the Promoter by no later than the specified time on the Closing Date. All competition entries received after the specified time on the Closing Date may be disqualified without a refund.',
+              '3.4. The maximum number of entries to the competition will be stated on the Website. The number of entries you are able to make may be limited if the maximum number of entries is reached.',
+              '3.5. Entrants can enter each competition as many times as they wish until the maximum number of entries per user have been submitted and until the maximum number of entries for the competition have been received. Entrants submitting free entries must submit each entry separately. Bulk entries, if received, will not be accepted and will only be counted as one single entry. Entries may be limited if the maximum number of entries for the competition is reached.',
+              '3.6. To enter the competition online: (a) go to the Website and view the Competition Question; (b) select your answer to the competition question and required number of entries; then (c) complete the checkout process and submit the online registration form; then (d) complete the payment to receive your order confirmation; (e) you may repeat this process as many times as you wish up to the maximum number of tickets allowed per Entrant, or until the total quantity of tickets have been allocated.',
+              '3.7. All entries must be submitted in the English language. Entries in languages other than English will automatically be disqualified and no refund will be given.',
+              '3.8. Unless you are using the free entry method, the Promoter will send confirmation that your entry has been received, and your allocated ticket number(s).',
+              '3.9. The Promoter will not accept responsibility for competition entries that are not successfully completed, are lost or are delayed regardless of cause, including, for example, as a result of any equipment failure, technical malfunction, systems, satellite, network, server, computer hardware or software failure of any kind.',
+              '3.10. By purchasing entries and submitting a competition entry, you are entering into a contract with the Promoter and are agreeing to be bound by these terms and conditions.',
+              '3.11. You may enter the competition for free by post by complying with the following conditions: (a) send your entry on an unenclosed postcard by first or second class post to the Promoter at the following address: 6 Brockwood Place, Aberdeen, AB21 0JU, United Kingdom; (b) hand delivered entries will not be accepted and will not be entered into the random draw; (c) include with your entry the following information: (i) your full name; (ii) your address; (iii) a contact telephone number and email address; and (iv) the Competition you are entering and your answer to the Competition Question; (d) incomplete or illegible entries will be disqualified; (e) you may make multiple free entries for any competition (up to any limit placed on entries by the Promoter) but each free entry must be submitted and posted to the Promoter separately. Bulk entries in one envelope will not be accepted as multiple entries and if a bulk entry is received, it will be counted as one single entry; (f) by entering the competition, you are confirming that you are eligible to enter and accept these terms and conditions; (g) your entry must be received by the Promoter prior to the Closing Date. Entries received after the Closing Date will not be entered into the random draw. Proof of posting does not guarantee you will be entered into the random draw; (h) the Promoter will not acknowledge receipt of your entry nor confirm if your answer to the Competition Question is correct; (i) if the number of entries reaches any cap or limit before your free entry is received, you will not be entered into the random draw; (j) Entrants must have created an account on the Website for the free entry to be processed. All details MUST correspond to the details on the account. Postal entries received without a registered account cannot be processed.',
             ],
           },
           {
-            heading: '5. Draw Process',
+            heading: '4. Choosing a winner',
             body: [
-              'Draws are conducted using a transparent and verifiable random selection process.',
-              'The draw date and time are clearly stated for each competition.',
-              'Winners are selected from all valid entries received before the draw closes.',
-              'The draw process is recorded and may be made available for verification.',
+              '4.1. All Entrants who correctly answer the Competition Question will be placed into a draw and the winner will be chosen by random draw. The random draw will take place as soon as reasonably possible and, in any event, within 7 days of the Closing Date (“Draw Date”).',
+              '4.2. All Entrants will have their names and entry numbers included in a spreadsheet which may be published on the Website and may be visible during the live draw. If you do not wish to have your name included in this spreadsheet you must contact the Promoter via email at info@acecompetitions.co.uk as soon as possible after you have completed your entry and in any event, at least 48 hours before the live draw takes place.',
+              'For help with entries, please email us at info@acecompetitions.co.uk.',
             ],
           },
           {
-            heading: '6. Prizes',
+            heading: '5. Eligibility',
             body: [
-              'Prize details are clearly stated in each competition listing.',
-              'Prizes are as described and cannot be exchanged for cash unless a cash alternative is explicitly stated.',
-              'Winners are responsible for any taxes or duties payable on prizes.',
-              'Prizes will be delivered within 28 days of winner confirmation, subject to availability.',
+              '5.1. The competition is only open to all residents in the United Kingdom aged 18 years or over, except: (a) employees of the Promoter; (b) employees of agents or suppliers of the Promoter, who are professionally connected with the competition or its administration.',
+              '5.2. By entering the competition, you confirm that you are eligible to do so and eligible to claim any prize you may win. The Promoter may require you to provide proof that you are eligible to enter the competition and claim the prize. If you fail to provide the Promoter with any such proof or other information that they may require within a reasonable time, you may be disqualified from the competition.',
+              '5.3. The Promoter will not accept competition entries that are: (a) automatically generated by computer; or (b) incomplete.',
+              '5.4. The Promoter reserves all rights to disqualify you if your conduct is contrary to the spirit or intention of the prize competition. This includes if you are rude or abusive to the Promoter or anyone associated with them.',
+              '5.5. Subject to clause 11.3 below, no refunds of the entry fee will be given in any event, including: (a) if, following your entry into the competition, you subsequently find out that you are not eligible to enter the competition or claim the Prize; (b) if, following your entry into the competition the eligibility criteria for entering the competition or claiming the Prize changes and you are no longer eligible; or (c) if you are disqualified from the competition by the Promoter for any reason.',
+              '5.6. If the Entrant engages in: (a) any form of fraud (actual or apparent); (b) fraudulent misrepresentation; (c) fraudulent concealment; (d) hacking or interference with the proper functioning of the website; or (e) amending, or unauthorised use of, any of the code that constitutes the website, all of their entries will be declared void, no refunds will be given and they may be prevented from participating in any future competitions.',
             ],
           },
           {
-            heading: '7. Winner Notification',
+            heading: '6. The prize',
             body: [
-              'Winners will be notified by email within 7 days of the draw.',
-              'Winners must respond within 14 days to claim their prize.',
-              'If a winner does not respond within the specified time, an alternative winner may be selected.',
+              '6.1. The prize for each competition is described on the Website (the “Prize”). Details of the Prize are, to the best of the Promoter’s knowledge, information and belief, correct as at the Opening Date.',
+              '6.2. Prizes are subject to availability. The Promoter reserves the right to substitute any prize with a prize of equal or greater value. If any details of the Prize change, the Promoter will endeavour to update the Website as soon as reasonably possible.',
+              '6.3. The Promoter makes no representations and gives no warranties about the Prize, its value, its condition or any other information provided on the Website. The Promoter makes no representations and gives no warranties that the information provided on the Website is accurate, complete or up to date. If the Prize is a vehicle: (a) the Promoter will, unless otherwise stated, ensure it comes with a valid MOT (if required); (b) no insurance is included with the Prize and it is the Winner’s responsibility to ensure the vehicle is adequately insured prior to taking it on the public roads (if it is legal to do so); (c) the Promoter has no responsibility for the Prize(s) once it has been delivered. The Winner is solely responsible for complying with all relevant laws and regulations relating to the vehicle, its operation and ensuring they operate it in a safe and responsible manner; (d) no vehicle/road tax is included; (e) the Winner is responsible for ensuring they have the necessary licences, qualification, knowledge and experience to operate the vehicle safely and legally; (f) the Winner is solely responsible for ensuring they have all necessary safety equipment and clothing (for example, helmets, boots and gloves) and for wearing them whilst operating the vehicle.',
+              '6.4. The Prize may be supplied by a third-party supplier (the “Supplier”). Details of the Supplier (if any) will be provided on the Website.',
+              '6.5. The Promoter reserves the right to substitute the Prize for an alternative cash prize (“Cash Prize”) in the following circumstances: (a) the Prize becomes unavailable; (b) other circumstances beyond the reasonable control of the Promoter make it necessary to do so.',
+              '6.6. The prize is not negotiable or transferable.',
+              '6.7. Where the prize is a holiday, event or day trip: (a) The number of people, class of transport and type of carrier, travel destination, nights and available dates will be listed in the competition description. The prize does not include travel insurance, the cost of transfers to and from airports or stations, food and drink, spending money, tax or personal expenses. Any other costs incurred in addition to those set out above and that are incidental to the fulfilment of the prize are the responsibility of the winner(s). (b) You will be responsible for ensuring that you and any person travelling with you are available to travel and hold valid passports, any necessary visas and travel documents for the holiday in question on the travel dates specified.',
             ],
           },
           {
-            heading: '8. Limitation of Liability',
+            heading: '7. Winners',
             body: [
-              'Royal Competitions shall not be liable for any indirect, incidental, special, or consequential damages arising from participation in competitions.',
-              'Our liability is limited to the value of the ticket purchased.',
+              '7.1. The decision of the Promoter is final and no correspondence or discussion will be entered into.',
+              '7.2. The Winner’s full name will be announced during the live draw. If you wish for your name to be censored during the live draw please contact info@acecompetitions.co.uk with reasonable time left before the prize draw takes place.',
+              '7.3. The Promoter will contact the winner personally as soon as practicable after the Draw Date using the telephone number or email address provided with the competition entry. If the winner cannot be contacted, is not available, or has not claimed the Prize, within 21 days of the Draw Date the Promoter reserves the right to offer the Prize to another Entrant (“The Alternate Winner“) selected at random in the same method as before from the remaining correct entries received before the Closing Date. The Alternate Winner shall have 21 days from notification of their status by the Promoters to communicate their acceptance of the Prize. This process shall continue until a winner accepts the Prize.',
+              '7.4. The Promoter must either publish or make available information that indicates that a valid award took place. To comply with this obligation the Promoter will publish the full name and county/town of residence of major prize winners on the Website.',
+              '7.5. If you object to any or all of your surname, county/town of residence and winning entry being published or made available, please contact the Promoter at info@acecompetitions.co.uk prior to the Closing Date. In such circumstances, the Promoter must still provide the information to the Advertising Standards Authority on request.',
             ],
           },
           {
-            heading: '9. Intellectual Property',
+            heading: '8. Claiming the prize',
             body: [
-              'All content on this website, including text, graphics, logos, and images, is the property of Royal Competitions.',
-              'You may not reproduce, distribute, or create derivative works without our written permission.',
+              '8.1. You must claim the Prize personally. The Prize may not be claimed by a third party on your behalf. Details of how the Prize will be delivered to you (or made available for collection) are published on the Website, or available on request.',
+              '8.2. If your personal details, including contact information, changes at any time you should notify the Promoter as soon as reasonably possible. Notifications should be sent to the Promoter via email to info@acecompetitions.co.uk. Notifications must include details of the competition you have entered, your old details and your new details. If your details change within 10 days of the Closing Date, the Promoter will use your old details if it needs to try to contact you.',
+              '8.3. Any Cash Prize will be transferred directly to the winners nominated bank account. The winner must provide evidence that it is the sole or joint beneficiary of the bank account. Failure to do so within 14 days will result in disqualification from the competition and the winner forfeiting the prize. In such circumstances, the Promoter reserves the right to offer the prize to the next eligible Entrant selected from the correct entries that were received before the Closing Date.',
+              '8.4. The Promoter does not accept any responsibility and is not liable to pay any compensation if you are unable to or do not take up the prize.',
+              '8.5. If the Prize is a vehicle and the winner has completed all eligibility checks, the prize will be transferred to the winner by the Promoter using the V5 for each vehicle. This must be completed before the vehicle is handed over.',
             ],
           },
           {
-            heading: '10. Changes to Terms',
+            heading: '9. Limitation of liability',
             body: [
-              'We reserve the right to modify these terms at any time.',
-              'Changes will be effective immediately upon posting to the website.',
-              'Your continued use of the service constitutes acceptance of any changes.',
+              'Insofar as is permitted by law, the Promoter, its agents or distributors will not in any circumstances be responsible or liable to compensate the winner or accept any liability for any loss, damage, personal injury or death occurring as a result of taking up the prize except where it is caused by the negligence of the Promoter, its agents or distributors or that of their employees. Your statutory rights are not affected.',
             ],
           },
           {
-            heading: '11. Contact Information',
+            heading: '10. Data protection and publicity',
             body: [
-              'If you have any questions about these Terms and Conditions, please contact us at:',
-              'Email: support@royalcompetitions.co.uk',
-              'Address: Royal Competitions, United Kingdom',
+              '10.1. By entering the competition, you agree that any personal information provided by you with the competition entry may be held and used only by the Promoter or its agents and suppliers to administer the competition or as otherwise set out in the Promoter’s Privacy Policy, a copy of which is available on the Website.',
+              '10.2. If you are the winner of the competition, you agree that the Promoter may use your name, image and town or county of residence to announce the winner of this competition. You further agree to participate in any reasonable publicity required by the Promoter.',
+              '10.3. If you do not wish to participate in any publicity, you must notify the Promoter prior to the Closing Date. This will not affect your chances of winning the Prize. If you do not agree to participate in any publicity about the competition we may still provide your details to the Advertising Standards Authority. This is a legal requirement that we must comply with to prove that the competition has been properly administered and the Prize awarded.',
+              '10.4. If you are the winner of the competition, you may be required to provide further personal information and proof of your identity in order to confirm your eligibility to claim the Prize and transfer ownership of the Prize to you. You consent to the use of your information in this way. You are entitled to request further details about how your personal information is being used. You may also withdraw your consent to your personal information being used in such way but by doing so you may prevent the Prize being transferred to you. In such circumstances, you will be deemed to have withdrawn from the competition and forfeit the Prize. You will not be entitled to any refund of your entry fee. The Promoter reserves the right to offer the Prize to the next eligible Entrant selected from the correct entries that were received before the Closing Date.',
+              '10.5. Please note that under data protection laws you are entitled to request that the Promoter does not contact you and removes your details from its database. If you make such a request you will be withdrawing from the competition as it will not be possible to contact you in the event that you are the winner. You will not be entitled to any refund of any entry fee if you withdraw from the competition. If you do not wish any of your personal details to be used by the Promoter for promotional purposes, please email the Promoter at info@acecompetitions.co.uk prior to the Closing Date.',
+            ],
+          },
+          {
+            heading: '11. General',
+            body: [
+              '11.1. The Promoter reserves the right to amend these terms and conditions from time to time. The latest version of these terms and conditions will be available on the Website.',
+              '11.2. If there is any reason to believe that there has been a breach of these terms and conditions, the Promoter may, at its sole discretion, reserve the right to exclude you from participating in the competition and any future competitions.',
+              '11.3. The Promoter reserves the right to hold void, suspend, cancel, or amend the prize competition where it becomes necessary to do so for circumstances out of its control. In such circumstances, the Promoter will refund any entry fees you have paid.',
+              '11.4. There is no minimum number of entries and the Promoter will not hold void, suspend, cancel, extend the Closing Date or amend the prize competition due to a lack of entries. The draw will take place and the Prize will be awarded regardless of the number of entries received.',
+              '11.5. The competitions on the Website are in no way sponsored, endorsed, administered by or associated with Facebook. By entering the competitions, Entrants agree that Facebook has no liability and is not responsible for the administration or promotion of the competitions.',
+              '11.6. These terms and conditions shall be governed by Scottish law, and the parties submit to the exclusive jurisdiction of the courts of Scotland.',
+              '11.7. We require winners photos for all wins with a value of £500 or over. This is compulsory. Refusal to provide a winners photo can be damaging to our business. We require these for transparency. You may ask a family member to take the photo on your behalf, however the photo must be bright and clear with our “ace winner” image on full display. We will not accept photos of pets or babies as an alternative.',
+              '11.8. You should print a copy of these terms and conditions and keep them for your records.',
             ],
           },
         ],
@@ -131,88 +179,163 @@ const seedLegalPages = async () => {
       {
         slug: 'terms-of-use',
         title: 'Terms of Use',
-        subtitle: 'Rules and guidelines for using our website and services',
+        subtitle: 'Website terms of use and acceptable use policy',
         isActive: true,
         sections: [
           {
-            heading: '1. Website Access',
+            heading:
+              'PLEASE READ THESE TERMS AND CONDITIONS CAREFULLY BEFORE USING THIS SITE',
             body: [
-              'You are granted a limited, non-exclusive, non-transferable license to access and use this website for personal, non-commercial purposes.',
-              "You may not use this website in any way that could damage, disable, or impair the website or interfere with any other party's use of the website.",
+              'These terms tell you the rules for using our website https://www.royalcompetitions.co.uk (our site).',
             ],
           },
           {
-            heading: '2. User Accounts',
+            heading: 'Who we are and how to contact us',
             body: [
-              'You are responsible for maintaining the confidentiality of your account credentials.',
-              'You agree to notify us immediately of any unauthorized use of your account.',
-              'You are responsible for all activities that occur under your account.',
+              'Our site is a site operated by Ace Comps Group Ltd (“We”). We are registered in Scotland under Company Number SC686957 and have our registered office at 6 Brockwood Place, Aberdeen, AB21 0JU, United Kingdom. Our main trading address is 6 Brockwood Place, Aberdeen, AB21 0JU, United Kingdom.',
+              'We are a limited company.',
+              'To contact us, please email info@acecompetitions.co.uk or contact us directly via our website.',
             ],
           },
           {
-            heading: '3. Prohibited Activities',
+            heading: 'By using our site you accept these terms',
             body: [
-              'You agree not to use the website for any unlawful purpose or in any way that violates these Terms of Use.',
-            ],
-            list: {
-              title: 'Prohibited activities include, but are not limited to:',
-              items: [
-                'Attempting to gain unauthorized access to the website or its systems',
-                'Transmitting viruses, malware, or any other harmful code',
-                'Collecting user information without consent',
-                'Impersonating any person or entity',
-                'Engaging in any form of automated data collection (scraping, crawling, etc.)',
-                "Interfering with or disrupting the website's operation",
-              ],
-            },
-          },
-          {
-            heading: '4. Content and Materials',
-            body: [
-              'All content on this website, including but not limited to text, graphics, logos, images, and software, is the property of Royal Competitions or its content suppliers.',
-              'You may not modify, copy, distribute, transmit, display, perform, reproduce, publish, license, create derivative works from, or sell any information or services obtained from this website.',
+              'By using our site, you confirm that you accept these terms of use and that you agree to comply with them.',
+              'If you do not agree to these terms, you must not use our site.',
+              'We recommend that you print a copy of these terms for future reference.',
             ],
           },
           {
-            heading: '5. User-Generated Content',
+            heading: 'There are other terms that may apply to you',
             body: [
-              'If you submit any content to our website (such as reviews, comments, or testimonials), you grant us a non-exclusive, royalty-free, perpetual license to use, modify, and display such content.',
-              'You represent that you have the right to grant such license and that your content does not violate any third-party rights.',
+              'These terms of use refer to the following additional terms, which also apply to your use of our site:',
+              'Our Privacy Policy, which sets out the terms on which we process any personal data we collect from you, or that you provide to us. By using our site, you consent to such processing and you warrant that all data provided by you is accurate.',
+              'Our Acceptable Use Policy, which sets out the permitted uses and prohibited uses of our site. When using our site, you must comply with this Acceptable Use Policy.',
+              'If you purchase goods or services from our site, participate in any promotions or enter any of our competitions, other terms and conditions will apply and which you must accept and abide by.',
             ],
           },
           {
-            heading: '6. Privacy',
+            heading: 'We may make changes to these terms',
             body: [
-              'Your use of this website is also governed by our Privacy Policy.',
-              'Please review our Privacy Policy to understand how we collect, use, and protect your personal information.',
+              'We may amend these terms from time to time. Every time you wish to use our site, please check these terms to ensure you understand the terms that apply at that time.',
             ],
           },
           {
-            heading: '7. Third-Party Links',
+            heading: 'We may make changes to our site',
             body: [
-              'Our website may contain links to third-party websites.',
-              'We are not responsible for the content or practices of these external sites.',
-              'Your use of third-party websites is at your own risk.',
+              'We may update and change our site from time to time to reflect changes to our products, services, our users’ needs and our business priorities.',
             ],
           },
           {
-            heading: '8. Disclaimer of Warranties',
+            heading: 'We may suspend or withdraw our site',
             body: [
-              'This website is provided "as is" without warranties of any kind, either express or implied.',
-              'We do not warrant that the website will be uninterrupted, secure, or error-free.',
+              'Our site is made available free of charge but you may have to pay to enter our competitions.',
+              'We do not guarantee that our site, or any content on it, will always be available or be uninterrupted. We may suspend or withdraw or restrict the availability of all or any part of our site for business and operational reasons. We will try to give you reasonable notice of any suspension or withdrawal.',
+              'You are also responsible for ensuring that all persons who access our site through your internet connection are aware of these terms of use and other applicable terms and conditions, and that they comply with them.',
             ],
           },
           {
-            heading: '9. Termination',
+            heading: 'Who can use our site?',
             body: [
-              'We reserve the right to terminate or suspend your access to the website at any time, without notice, for any reason, including violation of these Terms of Use.',
+              'Our site is directed to people residing in the United Kingdom. We do not represent that the content available on or through our site is appropriate for use or available in other locations.',
             ],
           },
           {
-            heading: '10. Governing Law',
+            heading: 'You must keep your account details safe',
             body: [
-              'These Terms of Use are governed by the laws of England and Wales.',
-              'Any disputes arising from these terms shall be subject to the exclusive jurisdiction of the courts of England and Wales.',
+              'If you choose, or you are provided with, a user identification code, password or any other piece of information as part of our security procedures, you must treat such information as confidential. You must not disclose it to any third party.',
+              'We have the right to disable any user identification code or password, whether chosen by you or allocated by us, at any time, if in our reasonable opinion you have failed to comply with any of the provisions of these terms of use.',
+              'If you know or suspect that anyone other than you knows your user identification code or password, you must promptly notify us at info@acecompetitions.co.uk.',
+            ],
+          },
+          {
+            heading: 'How you may use material on our site',
+            body: [
+              'We are the owner or the licensee of all intellectual property rights in our site, and in the material published on it. Those works are protected by copyright laws and treaties around the world. All such rights are reserved.',
+              'You may print off one copy, and may download extracts, of any page(s) from our site for your personal use and you may draw the attention of others within your organisation to content posted on our site.',
+              'You must not modify the paper or digital copies of any materials you have printed off or downloaded in any way, and you must not use any illustrations, photographs, video or audio sequences or any graphics separately from any accompanying text.',
+              'Our status (and that of any identified contributors) as the authors of content on our site must always be acknowledged.',
+              'You must not use any part of the content on our site for commercial purposes without obtaining a licence to do so from us or our licensors.',
+              'If you print off, copy or download any part of our site in breach of these terms of use, your right to use our site will cease immediately and you must, at our option, return or destroy any copies of the materials you have made.',
+            ],
+          },
+          {
+            heading: 'Do not rely on information on this site',
+            body: [
+              'The content on our site is provided for general information only. It is not intended to amount to advice on which you should rely. You must obtain professional or specialist advice before taking, or refraining from, any action on the basis of the content on our site.',
+              'Although we make reasonable efforts to update the information on our site, we make no representations, warranties or guarantees, whether express or implied, that the content on our site is accurate, complete or up to date.',
+            ],
+          },
+          {
+            heading: 'We are not responsible for websites we link to',
+            body: [
+              'Where our site contains links to other sites and resources provided by third parties, these links are provided for your information only. Such links should not be interpreted as approval by us of those linked websites or information you may obtain from them.',
+              'We have no control over the contents of those sites or resources.',
+            ],
+          },
+          {
+            heading: 'User-generated content is not approved by us',
+            body: [
+              'This website may include information and materials uploaded by other users of the site, including posts made to our social media accounts. This information and these materials have not been verified or approved by us. The views expressed by other users on our site do not represent our views or values.',
+              'If you wish to complain about information and materials uploaded by other users please contact us at info@acecompetitions.co.uk.',
+            ],
+          },
+          {
+            heading: 'Information about our use of cookies',
+            body: [
+              'Our website uses cookies to distinguish you from other users of our website. This helps us to provide you with a good experience when you browse our website and also allows us to improve our site. By continuing to browse the site, you are agreeing to our use of cookies.',
+              'A cookie is a small file of letters and numbers that we store on your browser or the hard drive of your computer if you agree. Cookies contain information that is transferred to your computer’s hard drive.',
+              'We use strictly necessary cookies, analytical/performance cookies, functionality cookies and targeting cookies to operate and improve our website and tailor content and advertising to your interests.',
+              'Please note that third parties (including, for example, advertising networks and providers of external services like web traffic analysis services) may also use cookies, over which we have no control. These cookies are likely to be analytical/performance cookies or targeting cookies.',
+              'You can block cookies by activating the setting on your browser that allows you to refuse the setting of all or some cookies. However, if you use your browser settings to block all cookies (including essential cookies) you may not be able to access all or parts of our site.',
+            ],
+          },
+          {
+            heading: 'Our responsibility for loss or damage suffered by you',
+            body: [
+              'We do not exclude or limit in any way our liability to you where it would be unlawful to do so. This includes liability for death or personal injury caused by our negligence or the negligence of our employees, agents or subcontractors and for fraud or fraudulent misrepresentation.',
+              'Different limitations and exclusions of liability will apply to liability arising as a result of the supply of any products or services to you or if you enter our competitions, which will be set out in our Terms and Conditions.',
+              'Please note that we only provide our site for domestic and private use. You agree not to use our site for any commercial or business purposes, and we have no liability to you for any loss of profit, loss of business, business interruption, or loss of business opportunity.',
+            ],
+          },
+          {
+            heading: 'Uploading content to our site',
+            body: [
+              'Whenever you make use of a feature that allows you to upload content to our site, post to our social media accounts or to make contact with other users of our site, you must comply with the content standards set out in our Acceptable Use Policy.',
+              'You warrant that any such contribution does comply with those standards, and you will be liable to us and indemnify us for any breach of that warranty.',
+              'Any content you upload to our site will be considered non-confidential and non-proprietary. You retain all of your ownership rights in your content, but you are required to grant us a perpetual, worldwide, non-exclusive, royalty-free, transferable licence to use, reproduce, distribute, prepare derivative works of, display, and perform that user-generated content.',
+              'We also have the right to disclose your identity to any third party who is claiming that any content posted or uploaded by you to our site constitutes a violation of their intellectual property rights, or of their right to privacy.',
+              'We have the right to remove any posting you make on our site if, in our opinion, your post does not comply with the content standards set out in our Acceptable Use Policy.',
+              'You are solely responsible for securing and backing up your content.',
+            ],
+          },
+          {
+            heading:
+              'We are not responsible for viruses and you must not introduce them',
+            body: [
+              'We do not guarantee that our site will be secure or free from bugs or viruses.',
+              'You are responsible for configuring your information technology, computer programmes and platform to access our site. You should use your own virus protection software.',
+              'You must not misuse our site by knowingly introducing viruses, trojans, worms, logic bombs or other material that is malicious or technologically harmful. You must not attempt to gain unauthorised access to our site, the server on which our site is stored or any server, computer or database connected to our site.',
+              'You must not attack our site via a denial-of-service attack or a distributed denial-of service attack. By breaching this provision, you would commit a criminal offence under the Computer Misuse Act 1990. We will report any such breach to the relevant law enforcement authorities and we will cooperate with those authorities by disclosing your identity to them. In the event of such a breach, your right to use our site will cease immediately.',
+            ],
+          },
+          {
+            heading: 'Rules about linking to our site',
+            body: [
+              'You may link to our home page, provided you do so in a way that is fair and legal and does not damage our reputation or take advantage of it.',
+              'You must not establish a link in such a way as to suggest any form of association, approval or endorsement on our part where none exists.',
+              'You must not establish a link to our site in any website that is not owned by you.',
+              'Our site must not be framed on any other site, nor may you create a link to any part of our site other than the home page.',
+              'We reserve the right to withdraw linking permission without notice.',
+              'The website in which you are linking must comply in all respects with the content standards set out in our Acceptable Use Policy.',
+              'If you wish to link to or make any use of content on our site other than that set out above, please contact info@acecompetitions.co.uk.',
+            ],
+          },
+          {
+            heading: 'Which country’s laws apply to any disputes?',
+            body: [
+              'These terms of use, their subject matter and their formation, are governed by English law. You and we both agree that the courts of England and Wales will have exclusive jurisdiction to deal with any disputes between us.',
+              'Wherever there is a mention of the Ace Competitions website in previous versions of these terms, it should now be read as a reference to the Royal Competitions Website.',
             ],
           },
         ],
@@ -477,11 +600,13 @@ const seedLegalPages = async () => {
     for (const pageData of legalPagesData) {
       const existingPage = await LegalPage.findOne({ slug: pageData.slug });
 
+      const content = buildHtmlFromSections(pageData.sections);
+
       const pagePayload: any = {
         slug: pageData.slug,
         title: pageData.title,
         subtitle: pageData.subtitle,
-        sections: pageData.sections,
+        content,
         isActive: pageData.isActive,
       };
 
@@ -495,7 +620,7 @@ const seedLegalPages = async () => {
         // Update existing page
         existingPage.title = pageData.title;
         existingPage.subtitle = pageData.subtitle;
-        existingPage.sections = pageData.sections as any;
+        existingPage.content = content;
         existingPage.isActive = pageData.isActive;
         if (adminUserId) {
           existingPage.updatedBy = adminUserId as any;

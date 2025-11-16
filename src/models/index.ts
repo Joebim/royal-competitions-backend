@@ -11,7 +11,7 @@ export { default as Newsletter } from './Newsletter.model';
 export { default as Cart } from './Cart.model';
 export { default as Review } from './Review.model';
 export { default as SiteStat } from './SiteStat.model';
-export { default as LegalPage, ILegalPage, ILegalSection } from './LegalPage.model';
+export { default as LegalPage, ILegalPage } from './LegalPage.model';
 export { default as FAQ, IFAQ } from './FAQ.model';
 export { default as Event, EventType } from './Event.model';
 export { default as Category } from './Category.model';

@@ -272,7 +272,7 @@ export const getPageContent = async (
       title: page.title,
       subtitle: page.subtitle,
       updatedAt: page.updatedAt,
-      sections: page.sections,
+      content: page.content,
     };
 
     res.json(
@@ -379,7 +379,7 @@ export const createLegalPage = async (
   next: NextFunction
 ) => {
   try {
-    const { slug, title, subtitle, sections, isActive } = req.body;
+    const { slug, title, subtitle, content, isActive } = req.body;
 
     // Check if page with slug already exists
     const existingPage = await LegalPage.findOne({ slug: slug.toLowerCase() });
@@ -393,7 +393,7 @@ export const createLegalPage = async (
       slug: slug.toLowerCase(),
       title,
       subtitle,
-      sections,
+      content,
       isActive: isActive !== undefined ? isActive : true,
       createdBy: req.user?._id as mongoose.Types.ObjectId | undefined,
       updatedBy: req.user?._id as mongoose.Types.ObjectId | undefined,
@@ -419,7 +419,7 @@ export const updateLegalPage = async (
 ) => {
   try {
     const { slug } = req.params;
-    const { title, subtitle, sections, isActive } = req.body;
+    const { title, subtitle, content, isActive } = req.body;
 
     const page = await LegalPage.findOne({ slug: slug.toLowerCase() });
 
@@ -431,7 +431,7 @@ export const updateLegalPage = async (
 
     if (title !== undefined) page.title = title;
     if (subtitle !== undefined) page.subtitle = subtitle;
-    if (sections !== undefined) page.sections = sections;
+    if (content !== undefined) page.content = content;
     if (isActive !== undefined) page.isActive = isActive;
     if (req.user) {
       page.updatedBy = req.user._id as any;

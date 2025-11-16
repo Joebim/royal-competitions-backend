@@ -282,6 +282,13 @@ const parseCompetitionPayload = (body: any) => {
     payload.noPurchasePostalAddress = body.noPurchasePostalAddress;
   }
 
+  // Free entry details (rich content for postal entries)
+  // At this point, validation middleware/Joi should already have ensured
+  // that this is either a valid object or has been parsed from JSON.
+  if (body.freeEntryDetails !== undefined) {
+    payload.freeEntryDetails = body.freeEntryDetails as any;
+  }
+
   // Terms URL
   if (body.termsUrl !== undefined) {
     payload.termsUrl = body.termsUrl;

@@ -14,6 +14,20 @@ export enum DrawMode {
   MANUAL = 'manual',
 }
 
+export interface IFreeEntrySection {
+  heading: string;
+  body: string[];
+  list?: {
+    title?: string;
+    items?: string[];
+  };
+}
+
+export interface IFreeEntryDetails {
+  intro?: string;
+  sections: IFreeEntrySection[];
+}
+
 export interface ICompetition extends Document {
   title: string;
   shortDescription?: string;
@@ -36,6 +50,7 @@ export interface ICompetition extends Document {
   drawAt: Date; // When the draw should occur
   freeEntryEnabled: boolean;
   noPurchasePostalAddress?: string; // Postal address for free entry
+  freeEntryDetails?: IFreeEntryDetails; // Rich content for free entry/postal entry information
   termsUrl?: string; // URL to terms and conditions
   question?: {
     question: string;
@@ -184,7 +199,7 @@ const competitionSchema = new Schema<ICompetition>(
       default: CompetitionStatus.DRAFT,
     },
     drawMode: {
-        type: String,
+      type: String,
       enum: Object.values(DrawMode),
       default: DrawMode.AUTOMATIC,
     },
@@ -200,6 +215,43 @@ const competitionSchema = new Schema<ICompetition>(
     noPurchasePostalAddress: {
       type: String,
       trim: true,
+    },
+    freeEntryDetails: {
+      intro: {
+        type: String,
+        trim: true,
+        maxlength: [4000, 'Free entry intro cannot exceed 4000 characters'],
+      },
+      sections: [
+        {
+          heading: {
+            type: String,
+            required: [true, 'Free entry section heading is required'],
+            trim: true,
+            maxlength: [200, 'Heading cannot exceed 200 characters'],
+          },
+          body: {
+            type: [String],
+            required: [true, 'Free entry section body is required'],
+            validate: {
+              validator: (arr: string[]) => arr.length > 0,
+              message:
+                'Free entry section body must contain at least one paragraph',
+            },
+          },
+          list: {
+            title: {
+              type: String,
+              trim: true,
+              maxlength: [200, 'List title cannot exceed 200 characters'],
+            },
+            items: {
+              type: [String],
+              default: [],
+            },
+          },
+        },
+      ],
     },
     question: {
       question: {

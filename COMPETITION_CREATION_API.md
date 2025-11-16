@@ -21,6 +21,7 @@ Creating a competition requires authentication (Admin or Super Admin role). The 
 The following fields are **mandatory** when creating a competition:
 
 ### 1. `title` (String)
+
 - **Required:** Yes
 - **Min Length:** 5 characters
 - **Max Length:** 200 characters
@@ -28,6 +29,7 @@ The following fields are **mandatory** when creating a competition:
 - **Example:** `"Win a Luxury Car - Mercedes-Benz C-Class"`
 
 ### 2. `description` (String)
+
 - **Required:** Yes
 - **Min Length:** 20 characters
 - **Max Length:** 5000 characters
@@ -35,11 +37,13 @@ The following fields are **mandatory** when creating a competition:
 - **Example:** `"Enter now for your chance to win this stunning Mercedes-Benz C-Class..."`
 
 ### 3. `prize` (String)
+
 - **Required:** Yes
 - **Description:** Short description of the prize
 - **Example:** `"Mercedes-Benz C-Class"`
 
 ### 4. `ticketPricePence` (Number)
+
 - **Required:** Yes
 - **Min Value:** 1
 - **Description:** Ticket price in **pence** (not pounds)
@@ -47,6 +51,7 @@ The following fields are **mandatory** when creating a competition:
 - **Example:** `100` (for £1.00), `500` (for £5.00), `1050` (for £10.50)
 
 ### 5. `category` (String)
+
 - **Required:** Yes
 - **Min Length:** 2 characters
 - **Max Length:** 100 characters
@@ -55,6 +60,7 @@ The following fields are **mandatory** when creating a competition:
 - **Example:** `"Luxury Cars"`, `"Tech & Gadgets"`, `"Holidays"`
 
 ### 6. `drawAt` (Date/String)
+
 - **Required:** Yes
 - **Description:** Date and time when the draw should occur
 - **Format:** ISO 8601 date string or Date object
@@ -67,26 +73,31 @@ The following fields are **mandatory** when creating a competition:
 ### Basic Information
 
 #### `shortDescription` (String)
+
 - **Max Length:** 280 characters
 - **Description:** Brief summary for listings/cards
 - **Example:** `"Win a luxury Mercedes-Benz C-Class worth £40,000"`
 
 #### `prizeValue` (Number)
+
 - **Min Value:** 0
 - **Description:** Monetary value of the prize in pounds
 - **Example:** `40000` (for £40,000)
 
 #### `cashAlternative` (Number)
+
 - **Min Value:** 0
 - **Description:** Cash alternative amount in pounds (if winner prefers cash)
 - **Example:** `35000` (for £35,000)
 
 #### `cashAlternativeDetails` (String)
+
 - **Max Length:** 500 characters
 - **Description:** Details about the cash alternative option
 - **Example:** `"Winner can choose to receive £35,000 cash instead"`
 
 #### `originalPrice` (Number)
+
 - **Min Value:** 0
 - **Description:** Original retail price of the prize in pounds
 - **Example:** `45000` (for £45,000)
@@ -94,6 +105,7 @@ The following fields are **mandatory** when creating a competition:
 ### Ticket Configuration
 
 #### `ticketLimit` (Number or null)
+
 - **Min Value:** 10
 - **Max Value:** 100000
 - **Allow null:** Yes
@@ -101,6 +113,7 @@ The following fields are **mandatory** when creating a competition:
 - **Example:** `10000` or `null`
 
 #### `ticketsSold` (Number)
+
 - **Min Value:** 0
 - **Description:** Number of tickets already sold (usually 0 for new competitions)
 - **Default:** 0
@@ -109,22 +122,26 @@ The following fields are **mandatory** when creating a competition:
 ### Competition Status
 
 #### `status` (String)
+
 - **Valid Values:** `"draft"`, `"live"`, `"closed"`, `"drawn"`, `"cancelled"`
 - **Description:** Current status of the competition
 - **Default:** Usually `"draft"` for new competitions
 - **Example:** `"draft"` or `"live"`
 
 #### `drawMode` (String)
+
 - **Valid Values:** `"automatic"`, `"admin_triggered"`, `"manual"`
 - **Description:** How the draw will be conducted
 - **Example:** `"automatic"`
 
 #### `featured` (Boolean)
+
 - **Description:** Whether to feature this competition on the homepage
 - **Default:** `false`
 - **Example:** `true` or `false`
 
 #### `isActive` (Boolean)
+
 - **Description:** Whether the competition is active and visible
 - **Default:** `true`
 - **Example:** `true` or `false`
@@ -132,11 +149,13 @@ The following fields are **mandatory** when creating a competition:
 ### Dates
 
 #### `startDate` (Date/String)
+
 - **Description:** When the competition starts accepting entries
 - **Format:** ISO 8601 date string
 - **Example:** `"2024-01-01T00:00:00.000Z"`
 
 #### `endDate` (Date/String)
+
 - **Description:** When the competition stops accepting entries
 - **Format:** ISO 8601 date string
 - **Note:** Must be greater than `startDate` if both are provided
@@ -145,24 +164,87 @@ The following fields are **mandatory** when creating a competition:
 ### Free Entry
 
 #### `freeEntryEnabled` (Boolean)
+
 - **Description:** Whether free postal entries are allowed
 - **Default:** `false`
 - **Example:** `true` or `false`
 
 #### `noPurchasePostalAddress` (String)
+
 - **Description:** Postal address for free entries (if free entry is enabled)
 - **Can be empty:** Yes
 - **Example:** `"Royal Competitions, 123 High Street, London, UK, SW1A 1AA"`
 
+#### `freeEntryDetails` (Object) **NEW**
+
+- **Description:** Rich content for free entry / postal entry information, shown in the frontend "Postal Entries" modal
+- **Structure:**
+
+```json
+{
+  "intro": "You may enter the competition for free by sending your entry on an unclosed postcard...",
+  "sections": [
+    {
+      "heading": "Please include the following information:",
+      "body": ["You must include the following details on your postcard:"],
+      "list": {
+        "title": "Required details",
+        "items": [
+          "your full name;",
+          "your address;",
+          "a contact telephone number and email address;",
+          "the Competition you are entering and your answer to the Competition Question."
+        ]
+      }
+    },
+    {
+      "heading": "Important notes",
+      "body": ["Please read our Terms and Conditions before entering."],
+      "list": {
+        "items": [
+          "Incomplete or illegible entries will be disqualified;",
+          "You may make multiple free entries for any competition, but each must be submitted separately;",
+          "Postal entries must be received before the Closing Date;",
+          "Entrants must have created an account on the Website for the postal entry to be processed."
+        ]
+      }
+    }
+  ]
+}
+```
+
+- **Fields:**
+  - `intro` (String, optional)
+    - Introductory paragraph text shown at the top of the Postal Entries panel
+    - Max length: 4000 characters
+  - `sections` (Array of Objects, optional)
+    - Each section represents a block with a heading, one or more paragraphs, and an optional bullet list
+    - Admin can add as many sections as needed to match the postal-entry UI
+
+  - Section fields:
+    - `heading` (String, required)
+      - Section title (e.g. "Please include the following information:")
+      - Max length: 200 characters
+    - `body` (String[], required)
+      - Array of paragraph strings for that section
+      - Must contain at least 1 paragraph
+    - `list` (Object, optional)
+      - `title` (String, optional)
+        - Optional list title (e.g. "Required details")
+      - `items` (String[], optional)
+        - Bullet list items (e.g. each bullet in the Postal Entries modal)
+
 ### Terms and Conditions
 
 #### `termsUrl` (String)
+
 - **Description:** URL to terms and conditions page
 - **Format:** Valid URI
 - **Can be empty:** Yes
 - **Example:** `"https://www.royalcompetitions.co.uk/terms"`
 
 #### `termsAndConditions` (String)
+
 - **Description:** Terms and conditions text
 - **Can be empty:** Yes
 - **Example:** `"By entering this competition, you agree to..."`
@@ -170,21 +252,25 @@ The following fields are **mandatory** when creating a competition:
 ### Additional Content
 
 #### `features` (Array of Strings or String)
+
 - **Description:** List of key features/benefits
 - **Format:** Array of strings or comma-separated string
 - **Example:** `["Air conditioning", "Leather seats", "Navigation system"]` or `"Air conditioning, Leather seats, Navigation system"`
 
 #### `included` (Array of Strings or String)
+
 - **Description:** What's included with the prize
 - **Format:** Array of strings or comma-separated string
 - **Example:** `["Full service history", "12 months warranty"]` or `"Full service history, 12 months warranty"`
 
 #### `tags` (Array of Strings or String)
+
 - **Description:** Tags for categorization and search
 - **Format:** Array of strings or comma-separated string
 - **Example:** `["luxury", "car", "mercedes"]` or `"luxury, car, mercedes"`
 
 #### `specifications` (Array of Objects or String)
+
 - **Description:** Technical specifications
 - **Format:** Array of objects with `label` and `value`, or JSON string
 - **Example:**
@@ -203,6 +289,7 @@ The following fields are **mandatory** when creating a competition:
 ### Skill Question (Optional)
 
 #### `question` (Object or null)
+
 - **Description:** Optional skill-based question for UK compliance
 - **Can be null:** Yes
 - **Structure:**
@@ -223,6 +310,7 @@ The following fields are **mandatory** when creating a competition:
 ### Images
 
 #### `images` (Files)
+
 - **Description:** Competition images (uploaded as files)
 - **Format:** `multipart/form-data` with file field name `images` (can be multiple)
 - **Supported Formats:** Images (JPEG, PNG, etc.)
@@ -231,10 +319,12 @@ The following fields are **mandatory** when creating a competition:
 ### Other
 
 #### `slug` (String)
+
 - **Description:** URL-friendly slug (auto-generated from title if not provided)
 - **Example:** `"win-luxury-car-mercedes-benz-c-class"`
 
 #### `nextTicketNumber` (Number)
+
 - **Min Value:** 1
 - **Description:** Starting ticket number (usually 1 for new competitions)
 - **Default:** 1
@@ -253,14 +343,20 @@ const formData = new FormData();
 
 // Required fields
 formData.append('title', 'Win a Luxury Car - Mercedes-Benz C-Class');
-formData.append('description', 'Enter now for your chance to win this stunning Mercedes-Benz C-Class...');
+formData.append(
+  'description',
+  'Enter now for your chance to win this stunning Mercedes-Benz C-Class...'
+);
 formData.append('prize', 'Mercedes-Benz C-Class');
 formData.append('ticketPricePence', '100'); // £1.00
 formData.append('category', 'Luxury Cars');
 formData.append('drawAt', '2024-12-31T23:59:59.000Z');
 
 // Optional fields
-formData.append('shortDescription', 'Win a luxury Mercedes-Benz C-Class worth £40,000');
+formData.append(
+  'shortDescription',
+  'Win a luxury Mercedes-Benz C-Class worth £40,000'
+);
 formData.append('prizeValue', '40000');
 formData.append('ticketLimit', '10000');
 formData.append('status', 'draft');
@@ -271,22 +367,31 @@ formData.append('images', file1);
 formData.append('images', file2);
 
 // Arrays (as JSON strings or comma-separated)
-formData.append('features', JSON.stringify(['Air conditioning', 'Leather seats']));
+formData.append(
+  'features',
+  JSON.stringify(['Air conditioning', 'Leather seats'])
+);
 formData.append('tags', 'luxury, car, mercedes');
 
 // Specifications (as JSON string)
-formData.append('specifications', JSON.stringify([
-  { label: 'Engine', value: '2.0L Turbo' },
-  { label: 'Transmission', value: 'Automatic' }
-]));
+formData.append(
+  'specifications',
+  JSON.stringify([
+    { label: 'Engine', value: '2.0L Turbo' },
+    { label: 'Transmission', value: 'Automatic' },
+  ])
+);
 
 // Question (as JSON string)
-formData.append('question', JSON.stringify({
-  question: 'What is the capital of England?',
-  options: ['London', 'Manchester', 'Birmingham'],
-  correctAnswer: 'London',
-  explanation: 'London is the capital of England.'
-}));
+formData.append(
+  'question',
+  JSON.stringify({
+    question: 'What is the capital of England?',
+    options: ['London', 'Manchester', 'Birmingham'],
+    correctAnswer: 'London',
+    explanation: 'London is the capital of England.',
+  })
+);
 ```
 
 ### Using JSON (No Images)
@@ -329,7 +434,10 @@ const createCompetition = async (competitionData, imageFiles = []) => {
   formData.append('title', competitionData.title);
   formData.append('description', competitionData.description);
   formData.append('prize', competitionData.prize);
-  formData.append('ticketPricePence', competitionData.ticketPricePence.toString());
+  formData.append(
+    'ticketPricePence',
+    competitionData.ticketPricePence.toString()
+  );
   formData.append('category', competitionData.category);
   formData.append('drawAt', competitionData.drawAt);
 
@@ -341,7 +449,10 @@ const createCompetition = async (competitionData, imageFiles = []) => {
     formData.append('prizeValue', competitionData.prizeValue.toString());
   }
   if (competitionData.ticketLimit !== undefined) {
-    formData.append('ticketLimit', competitionData.ticketLimit?.toString() || 'null');
+    formData.append(
+      'ticketLimit',
+      competitionData.ticketLimit?.toString() || 'null'
+    );
   }
   if (competitionData.status) {
     formData.append('status', competitionData.status);
@@ -368,7 +479,10 @@ const createCompetition = async (competitionData, imageFiles = []) => {
   }
 
   if (competitionData.specifications) {
-    formData.append('specifications', JSON.stringify(competitionData.specifications));
+    formData.append(
+      'specifications',
+      JSON.stringify(competitionData.specifications)
+    );
   }
 
   // Question
@@ -385,7 +499,7 @@ const createCompetition = async (competitionData, imageFiles = []) => {
     method: 'POST',
     headers: {
       // Don't set Content-Type header - browser will set it with boundary
-      'Authorization': `Bearer ${token}`, // If using token auth
+      Authorization: `Bearer ${token}`, // If using token auth
     },
     credentials: 'include', // If using cookie auth
     body: formData,
@@ -755,12 +869,14 @@ export default CreateCompetitionForm;
 **Problem:** The `ticketPricePence` field is missing or not being sent correctly.
 
 **Solutions:**
+
 1. Ensure you're sending `ticketPricePence` (not `ticketPrice` or `price`)
 2. Make sure the value is a number (not a string)
 3. When using FormData, convert to string: `formData.append('ticketPricePence', '100')`
 4. When using JSON, use a number: `"ticketPricePence": 100`
 
 **Example Fix:**
+
 ```javascript
 // ❌ Wrong
 formData.append('ticketPrice', '100');
@@ -775,6 +891,7 @@ formData.append('ticketPricePence', '100');
 **Problem:** The `drawAt` field is missing or in wrong format.
 
 **Solutions:**
+
 1. Ensure you're sending `drawAt` (not `drawDate` or `draw_time`)
 2. Use ISO 8601 format: `"2024-12-31T23:59:59.000Z"`
 3. When using `datetime-local` input, convert to ISO format:
@@ -784,6 +901,7 @@ formData.append('ticketPricePence', '100');
    ```
 
 **Example Fix:**
+
 ```javascript
 // ❌ Wrong
 formData.append('drawDate', '2024-12-31');
@@ -801,6 +919,7 @@ formData.append('drawAt', date.toISOString());
 **Problem:** Multiple required fields are missing or invalid.
 
 **Solutions:**
+
 1. Check all required fields are present:
    - `title` (5-200 chars)
    - `description` (20-5000 chars)
@@ -817,12 +936,14 @@ formData.append('drawAt', date.toISOString());
 **Problem:** Images aren't being sent correctly.
 
 **Solutions:**
+
 1. Use `FormData` (not JSON) when uploading images
 2. Don't set `Content-Type` header manually (browser sets it with boundary)
 3. Use field name `images` (plural) for multiple files
 4. Ensure files are actual File objects, not base64 strings
 
 **Example Fix:**
+
 ```javascript
 // ❌ Wrong
 const data = { images: base64String }; // Can't send base64 in FormData like this
@@ -841,11 +962,11 @@ formData.append('images', file2);
 
 ```javascript
 // User enters: £5.00
-const priceInPounds = 5.00;
+const priceInPounds = 5.0;
 const priceInPence = Math.round(priceInPence * 100); // 500
 
 // User enters: £10.50
-const priceInPounds = 10.50;
+const priceInPounds = 10.5;
 const priceInPence = Math.round(priceInPence * 100); // 1050
 ```
 
@@ -872,39 +993,39 @@ formData.append('tags', 'tag1, tag2, tag3');
 
 ## Complete Field Reference Table
 
-| Field | Type | Required | Min | Max | Format | Notes |
-|-------|------|----------|-----|-----|--------|-------|
-| `title` | String | ✅ | 5 | 200 | - | Competition title |
-| `description` | String | ✅ | 20 | 5000 | - | Full description |
-| `prize` | String | ✅ | - | - | - | Prize name |
-| `ticketPricePence` | Number | ✅ | 1 | - | Integer | Price in pence |
-| `category` | String | ✅ | 2 | 100 | - | Category name |
-| `drawAt` | Date/String | ✅ | - | - | ISO 8601 | Draw date/time |
-| `shortDescription` | String | ❌ | - | 280 | - | Brief summary |
-| `prizeValue` | Number | ❌ | 0 | - | - | Prize value in £ |
-| `cashAlternative` | Number | ❌ | 0 | - | - | Cash option in £ |
-| `cashAlternativeDetails` | String | ❌ | - | 500 | - | Cash option details |
-| `originalPrice` | Number | ❌ | 0 | - | - | Retail price in £ |
-| `ticketLimit` | Number/null | ❌ | 10 | 100000 | - | Max tickets (null = unlimited) |
-| `ticketsSold` | Number | ❌ | 0 | - | - | Already sold |
-| `status` | String | ❌ | - | - | Enum | draft/live/closed/drawn/cancelled |
-| `drawMode` | String | ❌ | - | - | Enum | automatic/admin_triggered/manual |
-| `featured` | Boolean | ❌ | - | - | - | Feature on homepage |
-| `isActive` | Boolean | ❌ | - | - | - | Active status |
-| `startDate` | Date/String | ❌ | - | - | ISO 8601 | Competition start |
-| `endDate` | Date/String | ❌ | - | - | ISO 8601 | Competition end |
-| `freeEntryEnabled` | Boolean | ❌ | - | - | - | Allow free entries |
-| `noPurchasePostalAddress` | String | ❌ | - | - | - | Postal address |
-| `termsUrl` | String | ❌ | - | - | URI | Terms URL |
-| `termsAndConditions` | String | ❌ | - | - | - | Terms text |
-| `features` | Array/String | ❌ | - | - | - | Key features |
-| `included` | Array/String | ❌ | - | - | - | What's included |
-| `tags` | Array/String | ❌ | - | - | - | Tags |
-| `specifications` | Array/String | ❌ | - | - | JSON | Specifications |
-| `question` | Object/null | ❌ | - | - | JSON | Skill question |
-| `images` | Files | ❌ | - | - | multipart | Image files |
-| `slug` | String | ❌ | - | - | - | Auto-generated |
-| `nextTicketNumber` | Number | ❌ | 1 | - | - | Starting ticket # |
+| Field                     | Type         | Required | Min | Max    | Format    | Notes                             |
+| ------------------------- | ------------ | -------- | --- | ------ | --------- | --------------------------------- |
+| `title`                   | String       | ✅       | 5   | 200    | -         | Competition title                 |
+| `description`             | String       | ✅       | 20  | 5000   | -         | Full description                  |
+| `prize`                   | String       | ✅       | -   | -      | -         | Prize name                        |
+| `ticketPricePence`        | Number       | ✅       | 1   | -      | Integer   | Price in pence                    |
+| `category`                | String       | ✅       | 2   | 100    | -         | Category name                     |
+| `drawAt`                  | Date/String  | ✅       | -   | -      | ISO 8601  | Draw date/time                    |
+| `shortDescription`        | String       | ❌       | -   | 280    | -         | Brief summary                     |
+| `prizeValue`              | Number       | ❌       | 0   | -      | -         | Prize value in £                  |
+| `cashAlternative`         | Number       | ❌       | 0   | -      | -         | Cash option in £                  |
+| `cashAlternativeDetails`  | String       | ❌       | -   | 500    | -         | Cash option details               |
+| `originalPrice`           | Number       | ❌       | 0   | -      | -         | Retail price in £                 |
+| `ticketLimit`             | Number/null  | ❌       | 10  | 100000 | -         | Max tickets (null = unlimited)    |
+| `ticketsSold`             | Number       | ❌       | 0   | -      | -         | Already sold                      |
+| `status`                  | String       | ❌       | -   | -      | Enum      | draft/live/closed/drawn/cancelled |
+| `drawMode`                | String       | ❌       | -   | -      | Enum      | automatic/admin_triggered/manual  |
+| `featured`                | Boolean      | ❌       | -   | -      | -         | Feature on homepage               |
+| `isActive`                | Boolean      | ❌       | -   | -      | -         | Active status                     |
+| `startDate`               | Date/String  | ❌       | -   | -      | ISO 8601  | Competition start                 |
+| `endDate`                 | Date/String  | ❌       | -   | -      | ISO 8601  | Competition end                   |
+| `freeEntryEnabled`        | Boolean      | ❌       | -   | -      | -         | Allow free entries                |
+| `noPurchasePostalAddress` | String       | ❌       | -   | -      | -         | Postal address                    |
+| `termsUrl`                | String       | ❌       | -   | -      | URI       | Terms URL                         |
+| `termsAndConditions`      | String       | ❌       | -   | -      | -         | Terms text                        |
+| `features`                | Array/String | ❌       | -   | -      | -         | Key features                      |
+| `included`                | Array/String | ❌       | -   | -      | -         | What's included                   |
+| `tags`                    | Array/String | ❌       | -   | -      | -         | Tags                              |
+| `specifications`          | Array/String | ❌       | -   | -      | JSON      | Specifications                    |
+| `question`                | Object/null  | ❌       | -   | -      | JSON      | Skill question                    |
+| `images`                  | Files        | ❌       | -   | -      | multipart | Image files                       |
+| `slug`                    | String       | ❌       | -   | -      | -         | Auto-generated                    |
+| `nextTicketNumber`        | Number       | ❌       | 1   | -      | -         | Starting ticket #                 |
 
 ---
 
@@ -945,7 +1066,10 @@ The absolute minimum required to create a competition:
 ```javascript
 const formData = new FormData();
 formData.append('title', 'Win a Prize');
-formData.append('description', 'This is a detailed description of the competition and prize that is at least 20 characters long.');
+formData.append(
+  'description',
+  'This is a detailed description of the competition and prize that is at least 20 characters long.'
+);
 formData.append('prize', 'Amazing Prize');
 formData.append('ticketPricePence', '100'); // £1.00
 formData.append('category', 'Other');
@@ -957,4 +1081,3 @@ fetch('/api/v1/competitions', {
   body: formData,
 });
 ```
-

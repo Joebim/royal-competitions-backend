@@ -1,56 +1,16 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 
-export interface ILegalSection {
-  heading: string;
-  body: string[];
-  list?: {
-    title?: string;
-    items?: string[];
-  };
-}
-
 export interface ILegalPage extends Document {
   slug: string;
   title: string;
   subtitle?: string;
-  sections: ILegalSection[];
+  content: string; // Rich text content (e.g. HTML or Draft.js raw JSON string)
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
   createdBy?: mongoose.Types.ObjectId;
   updatedBy?: mongoose.Types.ObjectId;
 }
-
-const legalSectionSchema = new Schema<ILegalSection>(
-  {
-    heading: {
-      type: String,
-      required: [true, 'Section heading is required'],
-      trim: true,
-      maxlength: [200, 'Heading cannot exceed 200 characters'],
-    },
-    body: {
-      type: [String],
-      required: [true, 'Section body is required'],
-      validate: {
-        validator: (arr: string[]) => arr.length > 0,
-        message: 'Section body must contain at least one paragraph',
-      },
-    },
-    list: {
-      title: {
-        type: String,
-        trim: true,
-        maxlength: [200, 'List title cannot exceed 200 characters'],
-      },
-      items: {
-        type: [String],
-        default: [],
-      },
-    },
-  },
-  { _id: false }
-);
 
 const legalPageSchema = new Schema<ILegalPage>(
   {
@@ -76,13 +36,9 @@ const legalPageSchema = new Schema<ILegalPage>(
       trim: true,
       maxlength: [500, 'Subtitle cannot exceed 500 characters'],
     },
-    sections: {
-      type: [legalSectionSchema],
-      required: [true, 'Sections are required'],
-      validate: {
-        validator: (arr: ILegalSection[]) => arr.length > 0,
-        message: 'Page must contain at least one section',
-      },
+    content: {
+      type: String,
+      required: [true, 'Content is required'],
     },
     isActive: {
       type: Boolean,
