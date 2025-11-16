@@ -120,6 +120,15 @@ export async function handlePaymentSuccess(paymentIntent: any) {
   session.startTransaction();
 
   try {
+    // Safety check: only process succeeded intents
+    if (paymentIntent.status && paymentIntent.status !== 'succeeded') {
+      logger.warn(
+        `handlePaymentSuccess called with non-succeeded intent ${paymentIntent.id} (status: ${paymentIntent.status})`
+      );
+      await session.abortTransaction();
+      return;
+    }
+
     const orderId = paymentIntent.metadata.orderId;
 
     // Check idempotency - if order is already paid, skip

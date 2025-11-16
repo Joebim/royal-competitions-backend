@@ -354,10 +354,20 @@ export const confirmCheckoutOrder = async (
     ) {
       try {
         logger.info(
-          `Confirming order ${order._id} via checkout confirm fallback (status: ${order.paymentStatus})`
+          `Confirming order ${order._id} via checkout confirm fallback (status: ${order.paymentStatus}, intent: ${paymentIntent.status})`
         );
+
+        // Ensure metadata.orderId is present for the shared handler
+        if (!paymentIntent.metadata) {
+          paymentIntent.metadata = {};
+        }
+        if (!paymentIntent.metadata.orderId) {
+          paymentIntent.metadata.orderId = String(order._id);
+        }
+
         // Reuse the webhook success handler logic
         await handlePaymentSuccess(paymentIntent);
+
         // Reload order after processing
         order = await Order.findById(order._id);
       } catch (fallbackError) {
