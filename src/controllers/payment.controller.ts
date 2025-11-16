@@ -115,7 +115,7 @@ export const handleWebhook = async (req: Request, res: Response) => {
  * Handle successful payment
  * Issues tickets and updates order status
  */
-async function handlePaymentSuccess(paymentIntent: any) {
+export async function handlePaymentSuccess(paymentIntent: any) {
   const session = await mongoose.startSession();
   session.startTransaction();
 

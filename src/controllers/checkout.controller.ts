@@ -15,6 +15,7 @@ import { ApiResponse } from '../utils/apiResponse';
 import stripeService from '../services/stripe.service';
 import logger from '../utils/logger';
 import { generateOrderNumber } from '../utils/randomGenerator';
+import { handlePaymentSuccess } from './payment.controller';
 
 /**
  * Create checkout from cart
@@ -341,6 +342,34 @@ export const confirmCheckoutOrder = async (
       } catch (error: any) {
         logger.error('Error getting payment intent:', error);
       }
+    }
+
+    // If Stripe says the payment succeeded but the order is still pending/processing,
+    // we can treat this as a fallback in case the webhook didn't run.
+    if (
+      paymentIntent &&
+      paymentIntent.status === 'succeeded' &&
+      order &&
+      order.paymentStatus !== OrderPaymentStatus.PAID
+    ) {
+      try {
+        logger.info(
+          `Confirming order ${order._id} via checkout confirm fallback (status: ${order.paymentStatus})`
+        );
+        // Reuse the webhook success handler logic
+        await handlePaymentSuccess(paymentIntent);
+        // Reload order after processing
+        order = await Order.findById(order._id);
+      } catch (fallbackError) {
+        logger.error(
+          'Error running payment success fallback in confirmCheckoutOrder:',
+          fallbackError
+        );
+      }
+    }
+
+    if (!order) {
+      throw new ApiError('Order not found after payment processing', 500);
     }
 
     // Get competition
