@@ -19,7 +19,8 @@
     "seed:reviews": "ts-node src/scripts/seedReviews.ts",
     "seed:about": "ts-node src/scripts/seedAboutPage.ts",
     "seed:admins": "ts-node src/scripts/seedAdmins.ts",
-    "seed:all": "npm run seed:super-admin && npm run seed:admins && npm run seed:categories && npm run seed:reviews && npm run seed:about && npm run seed:legal-pages && npm run seed:showcase"
+    "seed:all": "npm run seed:super-admin && npm run seed:admins && npm run seed:categories && npm run seed:reviews && npm run seed:about && npm run seed:legal-pages && npm run seed:showcase",
+    "push": "git push origin main && git push client main"
   },
   "keywords": [
     "competitions",

@@ -1,6 +1,11 @@
+import dotenv from 'dotenv';
+import path from 'path';
 import { connectDatabase, disconnectDatabase } from '../config/database';
 import { User, UserRole } from '../models';
 import logger from '../utils/logger';
+
+// Load environment variables
+dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 /**
  * Seed script to create core admin users.
@@ -10,9 +15,11 @@ import logger from '../utils/logger';
  * - Marco   (Marco_dacosta1999@hotmail.com)
  * - Brian   (brianjosephdias@gmail.com)
  *
- * Each account will be given a default password if it doesn't already exist.
- * The plaintext passwords are logged to the console ONLY when this script runs,
- * so you can capture them and then change them in the admin UI.
+ * Passwords are read from environment variables for security.
+ * Set the following in your .env file:
+ * - SEED_ADMIN_LUKASZ_PASSWORD
+ * - SEED_ADMIN_MARCO_PASSWORD
+ * - SEED_ADMIN_BRIAN_PASSWORD
  *
  * Usage:
  *  - npm run seed:admins
@@ -24,19 +31,19 @@ const adminSeeds = [
     firstName: 'Lukasz',
     lastName: 'Bujnowski',
     email: 'lukasz.bujnowski0@outlook.com',
-    password: 'LukaszAdmin123!',
+    passwordEnv: 'SEED_ADMIN_LUKASZ_PASSWORD',
   },
   {
     firstName: 'Marco',
     lastName: 'Da Costa',
     email: 'Marco_dacosta1999@hotmail.com',
-    password: 'MarcoAdmin123!',
+    passwordEnv: 'SEED_ADMIN_MARCO_PASSWORD',
   },
   {
     firstName: 'Brian',
     lastName: 'Dias',
     email: 'brianjosephdias@gmail.com',
-    password: 'BrianAdmin123!',
+    passwordEnv: 'SEED_ADMIN_BRIAN_PASSWORD',
   },
 ];
 
@@ -46,6 +53,14 @@ const seedAdmins = async () => {
     console.log('✅ Connected to MongoDB');
 
     for (const admin of adminSeeds) {
+      const password = process.env[admin.passwordEnv];
+
+      if (!password) {
+        console.error(`❌ Missing environment variable: ${admin.passwordEnv}`);
+        console.error(`   Please set ${admin.passwordEnv} in your .env file`);
+        continue;
+      }
+
       const existing = await User.findOne({ email: admin.email.toLowerCase() });
 
       if (existing) {
@@ -57,7 +72,7 @@ const seedAdmins = async () => {
         existing.isActive = true;
         // Only set password if they don't have one yet
         if (!existing.password) {
-          existing.password = admin.password;
+          existing.password = password;
         }
         await existing.save();
 
@@ -68,7 +83,7 @@ const seedAdmins = async () => {
           firstName: admin.firstName,
           lastName: admin.lastName,
           email: admin.email.toLowerCase(),
-          password: admin.password,
+          password: password,
           role: UserRole.ADMIN,
           isVerified: true,
           isActive: true,
@@ -78,13 +93,14 @@ const seedAdmins = async () => {
         console.log(`✅ Created admin: ${admin.email}`);
       }
 
-      // Log credentials so you can log in and then change the password
+      // Log email only (password is not logged for security)
       console.log(`   Email: ${admin.email}`);
-      console.log(`   Password: ${admin.password}`);
       console.log('   Role: ADMIN\n');
     }
 
-    console.log('✅ Admin seeding complete. Please change these passwords after first login.');
+    console.log(
+      '✅ Admin seeding complete. Please change these passwords after first login.'
+    );
     await disconnectDatabase();
     process.exit(0);
   } catch (error: any) {
@@ -100,5 +116,3 @@ if (require.main === module) {
 }
 
 export default seedAdmins;
-
-
