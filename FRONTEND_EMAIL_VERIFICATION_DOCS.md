@@ -1,4 +1,4 @@
- # Frontend Email Verification Documentation
+# Frontend Email Verification Documentation
 
 ## Overview
 
@@ -29,6 +29,7 @@ This document provides complete frontend integration guide for email verificatio
 ## Step 1: User Registration
 
 ### User Action
+
 User fills out registration form and submits.
 
 ### API Endpoint
@@ -36,6 +37,7 @@ User fills out registration form and submits.
 **POST** `/api/v1/auth/register`
 
 **Request:**
+
 ```http
 POST /api/v1/auth/register
 Content-Type: application/json
@@ -51,6 +53,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -73,6 +76,7 @@ Content-Type: application/json
 ```
 
 **What Happens:**
+
 - User account is created
 - Verification token is generated
 - **Verification email is sent** with luxury template ✅
@@ -80,6 +84,7 @@ Content-Type: application/json
 - User's `isVerified` status is `false` until verified
 
 ### Frontend Implementation
+
 ```typescript
 // Register user
 const register = async (userData: {
@@ -93,13 +98,13 @@ const register = async (userData: {
   const response = await fetch('/api/v1/auth/register', {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
     },
-    body: JSON.stringify(userData)
+    body: JSON.stringify(userData),
   });
-  
+
   const data = await response.json();
-  
+
   if (data.success) {
     // Show success message
     // Display: "Please check your email to verify your account"
@@ -113,10 +118,13 @@ const register = async (userData: {
 ## Step 2: Email Verification
 
 ### User Action
+
 User clicks verification link in email OR uses verification API endpoint.
 
 ### Email Template
+
 The user receives a luxury email with:
+
 - **Navy and Gold branding**
 - **Montserrat font**
 - Verification button
@@ -126,14 +134,17 @@ The user receives a luxury email with:
 ### API Endpoints
 
 #### Option A: GET Request (Clickable Link)
+
 **GET** `/api/v1/auth/verify-email?token=<verification_token>`
 
 **Request:**
+
 ```http
 GET /api/v1/auth/verify-email?token=abc123def456...
 ```
 
 **Response (Success):**
+
 ```json
 {
   "success": true,
@@ -143,6 +154,7 @@ GET /api/v1/auth/verify-email?token=abc123def456...
 ```
 
 **Response (Already Verified):**
+
 ```json
 {
   "success": true,
@@ -152,6 +164,7 @@ GET /api/v1/auth/verify-email?token=abc123def456...
 ```
 
 **Response (Error - Invalid/Expired Token):**
+
 ```json
 {
   "success": false,
@@ -161,9 +174,11 @@ GET /api/v1/auth/verify-email?token=abc123def456...
 ```
 
 #### Option B: POST Request (API Call)
+
 **POST** `/api/v1/auth/verify-email`
 
 **Request:**
+
 ```http
 POST /api/v1/auth/verify-email
 Content-Type: application/json
@@ -179,16 +194,17 @@ Same as GET request above.
 ### Frontend Implementation
 
 #### Option 1: Direct Link (Recommended)
+
 ```typescript
 // User clicks link in email
 // Frontend receives token from URL query parameter
 const verifyEmail = async (token: string) => {
   const response = await fetch(`/api/v1/auth/verify-email?token=${token}`, {
-    method: 'GET'
+    method: 'GET',
   });
-  
+
   const data = await response.json();
-  
+
   if (data.success) {
     // Show success message
     // Update user state (isVerified: true)
@@ -203,7 +219,7 @@ const verifyEmail = async (token: string) => {
 useEffect(() => {
   const urlParams = new URLSearchParams(window.location.search);
   const token = urlParams.get('token');
-  
+
   if (token) {
     verifyEmail(token);
   }
@@ -211,19 +227,20 @@ useEffect(() => {
 ```
 
 #### Option 2: Manual Token Entry
+
 ```typescript
 // User enters token manually
 const verifyEmail = async (token: string) => {
   const response = await fetch('/api/v1/auth/verify-email', {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ token })
+    body: JSON.stringify({ token }),
   });
-  
+
   const data = await response.json();
-  
+
   if (data.success) {
     // Show success message
     // Update user state
@@ -236,6 +253,7 @@ const verifyEmail = async (token: string) => {
 ## Step 3: Resend Verification Email
 
 ### User Action
+
 User requests a new verification email (if original expired or wasn't received).
 
 ### API Endpoint
@@ -243,6 +261,7 @@ User requests a new verification email (if original expired or wasn't received).
 **POST** `/api/v1/auth/resend-verification`
 
 **Request:**
+
 ```http
 POST /api/v1/auth/resend-verification
 Content-Type: application/json
@@ -253,6 +272,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -261,6 +281,7 @@ Content-Type: application/json
 ```
 
 **Error Response (User Not Found):**
+
 ```json
 {
   "success": false,
@@ -270,6 +291,7 @@ Content-Type: application/json
 ```
 
 **Error Response (Already Verified):**
+
 ```json
 {
   "success": false,
@@ -279,19 +301,20 @@ Content-Type: application/json
 ```
 
 ### Frontend Implementation
+
 ```typescript
 // Resend verification email
 const resendVerification = async (email: string) => {
   const response = await fetch('/api/v1/auth/resend-verification', {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ email })
+    body: JSON.stringify({ email }),
   });
-  
+
   const data = await response.json();
-  
+
   if (data.success) {
     // Show success message
     // "A new verification email has been sent"
@@ -306,6 +329,7 @@ const resendVerification = async (email: string) => {
 ## Complete Frontend Flow Example
 
 ### Registration Page Component
+
 ```typescript
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -339,8 +363,8 @@ const RegisterPage = () => {
 
       if (data.success) {
         // Redirect to verification page
-        navigate('/verify-email', { 
-          state: { email: formData.email } 
+        navigate('/verify-email', {
+          state: { email: formData.email }
         });
       } else {
         // Show error
@@ -366,6 +390,7 @@ const RegisterPage = () => {
 ```
 
 ### Email Verification Page Component
+
 ```typescript
 import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
@@ -404,7 +429,7 @@ const VerifyEmailPage = () => {
       if (data.success) {
         setStatus('success');
         setMessage(data.message);
-        
+
         // Redirect to login after 3 seconds
         setTimeout(() => {
           navigate('/login');
@@ -481,12 +506,12 @@ const VerifyEmailPage = () => {
 
 ## Email Verification Endpoints Summary
 
-| Endpoint | Method | Purpose | Auth Required |
-|----------|--------|---------|---------------|
-| `/api/v1/auth/register` | POST | Register new user | No |
-| `/api/v1/auth/verify-email` | GET | Verify email (link click) | No |
-| `/api/v1/auth/verify-email` | POST | Verify email (API call) | No |
-| `/api/v1/auth/resend-verification` | POST | Resend verification email | No |
+| Endpoint                           | Method | Purpose                   | Auth Required |
+| ---------------------------------- | ------ | ------------------------- | ------------- |
+| `/api/v1/auth/register`            | POST   | Register new user         | No            |
+| `/api/v1/auth/verify-email`        | GET    | Verify email (link click) | No            |
+| `/api/v1/auth/verify-email`        | POST   | Verify email (API call)   | No            |
+| `/api/v1/auth/resend-verification` | POST   | Resend verification email | No            |
 
 ---
 
@@ -497,12 +522,14 @@ const VerifyEmailPage = () => {
 **GET** `/api/v1/auth/profile`
 
 **Request:**
+
 ```http
 GET /api/v1/auth/profile
 Authorization: Bearer <token>
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -521,17 +548,18 @@ Authorization: Bearer <token>
 ```
 
 ### Frontend Implementation
+
 ```typescript
 // Check if user is verified
 const checkVerificationStatus = async () => {
   const response = await fetch('/api/v1/auth/profile', {
     headers: {
-      'Authorization': `Bearer ${token}`
-    }
+      Authorization: `Bearer ${token}`,
+    },
   });
-  
+
   const data = await response.json();
-  
+
   if (data.success && !data.data.user.isVerified) {
     // Show verification reminder
     // Redirect to verification page
@@ -546,7 +574,9 @@ const checkVerificationStatus = async () => {
 ### Common Errors
 
 #### 1. Invalid or Expired Token
+
 **Error:**
+
 ```json
 {
   "success": false,
@@ -556,11 +586,14 @@ const checkVerificationStatus = async () => {
 ```
 
 **Solution:**
+
 - Request a new verification email
 - Token expires after 24 hours
 
 #### 2. Already Verified
+
 **Error:**
+
 ```json
 {
   "success": false,
@@ -570,11 +603,14 @@ const checkVerificationStatus = async () => {
 ```
 
 **Solution:**
+
 - User can proceed to login
 - No action needed
 
 #### 3. User Not Found
+
 **Error:**
+
 ```json
 {
   "success": false,
@@ -584,6 +620,7 @@ const checkVerificationStatus = async () => {
 ```
 
 **Solution:**
+
 - Check email address
 - User may need to register again
 
@@ -601,6 +638,7 @@ const checkVerificationStatus = async () => {
 ## Email Template Preview
 
 The verification email includes:
+
 - **Luxury Navy and Gold design**
 - **Montserrat font** throughout
 - Clear call-to-action button
@@ -665,4 +703,3 @@ The verification email includes:
 - ✅ Email verification is required for full access
 
 The email verification system is fully functional and ready for frontend integration! 🎉
-

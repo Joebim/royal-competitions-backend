@@ -248,7 +248,9 @@ class EmailTemplatesService {
   /**
    * Email Verification Template
    */
-  getVerificationEmail(options: EmailTemplateOptions & { verificationToken: string }): string {
+  getVerificationEmail(
+    options: EmailTemplateOptions & { verificationToken: string }
+  ): string {
     const verificationUrl = `${config.frontendUrl}/verify-email?token=${options.verificationToken}`;
     const firstName = options.firstName || 'Valued Customer';
 
@@ -284,7 +286,9 @@ class EmailTemplatesService {
   /**
    * Password Reset Template
    */
-  getPasswordResetEmail(options: EmailTemplateOptions & { resetToken: string }): string {
+  getPasswordResetEmail(
+    options: EmailTemplateOptions & { resetToken: string }
+  ): string {
     const resetUrl = `${config.frontendUrl}/reset-password?token=${options.resetToken}`;
     const firstName = options.firstName || 'Valued Customer';
 
@@ -319,13 +323,15 @@ class EmailTemplatesService {
   /**
    * Order Confirmation Template
    */
-  getOrderConfirmationEmail(options: EmailTemplateOptions & {
-    orderNumber: string;
-    competitionTitle: string;
-    ticketNumbers: number[];
-    amountGBP: string;
-    orderId: string;
-  }): string {
+  getOrderConfirmationEmail(
+    options: EmailTemplateOptions & {
+      orderNumber: string;
+      competitionTitle: string;
+      ticketNumbers: number[];
+      amountGBP: string;
+      orderId: string;
+    }
+  ): string {
     const firstName = options.firstName || 'Valued Customer';
     const orderUrl = `${config.frontendUrl}/orders/${options.orderId}`;
 
@@ -374,23 +380,29 @@ class EmailTemplatesService {
   /**
    * Payment Success Template
    */
-  getPaymentSuccessEmail(options: EmailTemplateOptions & {
-    orderNumber: string;
-    competitionTitle: string;
-    ticketNumbers: number[];
-    amountGBP: string;
-    orderId: string;
-  }): string {
+  getPaymentSuccessEmail(
+    options: EmailTemplateOptions & {
+      orderNumber: string;
+      competitionTitle: string;
+      ticketNumbers: number[];
+      amountGBP: string;
+      orderId: string;
+    }
+  ): string {
     const firstName = options.firstName || 'Valued Customer';
     const ticketsUrl = `${config.frontendUrl}/tickets`;
     const orderUrl = `${config.frontendUrl}/orders/${options.orderId}`;
 
-    const ticketListItems = options.ticketNumbers.map(num => `
+    const ticketListItems = options.ticketNumbers
+      .map(
+        (num) => `
       <div class="ticket-item">
         <span class="ticket-label">Ticket #${num}</span>
         <span class="ticket-value" style="color: #e3b03e;">✓ Active</span>
       </div>
-    `).join('');
+    `
+      )
+      .join('');
 
     const content = `
       <h1 class="content-title">🎉 Payment Successful!</h1>
@@ -439,13 +451,15 @@ class EmailTemplatesService {
   /**
    * Winner Notification Template
    */
-  getWinnerNotificationEmail(options: EmailTemplateOptions & {
-    competitionTitle: string;
-    ticketNumber: number;
-    prize: string;
-    drawDate: string;
-    claimUrl: string;
-  }): string {
+  getWinnerNotificationEmail(
+    options: EmailTemplateOptions & {
+      competitionTitle: string;
+      ticketNumber: number;
+      prize: string;
+      drawDate: string;
+      claimUrl: string;
+    }
+  ): string {
     const firstName = options.firstName || 'Valued Customer';
 
     const content = `
@@ -481,11 +495,13 @@ class EmailTemplatesService {
         </div>
         <div class="ticket-item">
           <span class="ticket-label">Draw Date</span>
-          <span class="ticket-value">${new Date(options.drawDate).toLocaleDateString('en-GB', { 
-            weekday: 'long', 
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric' 
+          <span class="ticket-value">${new Date(
+            options.drawDate
+          ).toLocaleDateString('en-GB', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
           })}</span>
         </div>
       </div>
@@ -507,18 +523,20 @@ class EmailTemplatesService {
       </p>
     `;
 
-    return this.getBaseTemplate(content, 'You\'re a Winner!');
+    return this.getBaseTemplate(content, "You're a Winner!");
   }
 
   /**
    * Draw Completed Template
    */
-  getDrawCompletedEmail(options: EmailTemplateOptions & {
-    competitionTitle: string;
-    drawDate: string;
-    winnerTicketNumber: number;
-    competitionUrl: string;
-  }): string {
+  getDrawCompletedEmail(
+    options: EmailTemplateOptions & {
+      competitionTitle: string;
+      drawDate: string;
+      winnerTicketNumber: number;
+      competitionUrl: string;
+    }
+  ): string {
     const firstName = options.firstName || 'Valued Customer';
 
     const content = `
@@ -536,11 +554,13 @@ class EmailTemplatesService {
         </div>
         <div class="ticket-item">
           <span class="ticket-label">Draw Date</span>
-          <span class="ticket-value">${new Date(options.drawDate).toLocaleDateString('en-GB', { 
-            weekday: 'long', 
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric' 
+          <span class="ticket-value">${new Date(
+            options.drawDate
+          ).toLocaleDateString('en-GB', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
           })}</span>
         </div>
         <div class="ticket-item">
@@ -566,12 +586,14 @@ class EmailTemplatesService {
   /**
    * Order Refunded Template
    */
-  getOrderRefundedEmail(options: EmailTemplateOptions & {
-    orderNumber: string;
-    competitionTitle: string;
-    amountGBP: string;
-    refundReason?: string;
-  }): string {
+  getOrderRefundedEmail(
+    options: EmailTemplateOptions & {
+      orderNumber: string;
+      competitionTitle: string;
+      amountGBP: string;
+      refundReason?: string;
+    }
+  ): string {
     const firstName = options.firstName || 'Valued Customer';
 
     const content = `
@@ -596,12 +618,16 @@ class EmailTemplatesService {
           <span class="ticket-label">Refund Amount</span>
           <span class="ticket-value" style="color: #e3b03e;">£${options.amountGBP}</span>
         </div>
-        ${options.refundReason ? `
+        ${
+          options.refundReason
+            ? `
         <div class="ticket-item">
           <span class="ticket-label">Reason</span>
           <span class="ticket-value">${options.refundReason}</span>
         </div>
-        ` : ''}
+        `
+            : ''
+        }
       </div>
       <div class="info-box">
         <div class="info-box-title">💳 Refund Details</div>
@@ -618,10 +644,12 @@ class EmailTemplatesService {
   /**
    * Competition Closed Template
    */
-  getCompetitionClosedEmail(options: EmailTemplateOptions & {
-    competitionTitle: string;
-    competitionUrl: string;
-  }): string {
+  getCompetitionClosedEmail(
+    options: EmailTemplateOptions & {
+      competitionTitle: string;
+      competitionUrl: string;
+    }
+  ): string {
     const firstName = options.firstName || 'Valued Customer';
 
     const content = `
@@ -651,4 +679,3 @@ class EmailTemplatesService {
 
 const emailTemplatesService = new EmailTemplatesService();
 export default emailTemplatesService;
-

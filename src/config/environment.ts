@@ -128,6 +128,7 @@ export const config: Config = {
       email: process.env.EMAIL_NOREPLY || 'noreply@royalcompetitions.co.uk',
       name: process.env.EMAIL_NOREPLY_NAME || 'Royal Competitions',
     },
+    
     // Info email configuration (for order updates, payments, winners)
     info: {
       user: process.env.EMAIL_INFO_USER || '',
