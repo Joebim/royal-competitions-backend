@@ -611,3 +611,72 @@ export const getMyOrdersGrouped = async (
   }
 };
 
+/**
+ * Update current user's profile
+ * PUT /api/v1/users/me
+ * PATCH /api/v1/users/me
+ */
+export const updateMyProfile = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    if (!req.user) {
+      throw new ApiError('Not authorized', 401);
+    }
+
+    const updates: Record<string, any> = {};
+
+    // Update firstName if provided
+    if (req.body.firstName !== undefined) {
+      updates.firstName = req.body.firstName;
+    }
+
+    // Update lastName if provided
+    if (req.body.lastName !== undefined) {
+      updates.lastName = req.body.lastName;
+    }
+
+    // Update phone if provided (can be null to remove)
+    if (req.body.phone !== undefined) {
+      updates.phone = req.body.phone || null;
+    }
+
+    // Update subscription status (accepts both isSubscribed and subscribedToNewsletter)
+    if (req.body.isSubscribed !== undefined) {
+      updates.subscribedToNewsletter = Boolean(req.body.isSubscribed);
+    } else if (req.body.subscribedToNewsletter !== undefined) {
+      updates.subscribedToNewsletter = Boolean(req.body.subscribedToNewsletter);
+    }
+
+    // Check if any updates were provided
+    if (Object.keys(updates).length === 0) {
+      throw new ApiError('No updates provided', 400);
+    }
+
+    // Update user
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      updates,
+      {
+        new: true,
+        runValidators: true,
+      }
+    ).select('-password');
+
+    if (!user) {
+      throw new ApiError('User not found', 404);
+    }
+
+    res.json(
+      ApiResponse.success(
+        { user: sanitizeUser(user) },
+        'Profile updated successfully'
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+

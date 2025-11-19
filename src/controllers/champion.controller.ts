@@ -4,6 +4,7 @@ import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
 import { getPagination } from '../utils/pagination';
 import cloudinaryService from '../services/cloudinary.service';
+import logger from '../utils/logger';
 
 /**
  * @swagger
@@ -383,13 +384,17 @@ export const deleteChampion = async (
     }
 
     // Delete image from Cloudinary
-    if (champion.image.publicId) {
-      await cloudinaryService.deleteImage(champion.image.publicId);
+    if (champion.image?.publicId) {
+      try {
+        await cloudinaryService.deleteImage(champion.image.publicId);
+      } catch (error) {
+        // Log error but don't fail deletion if image deletion fails
+        logger.error('Error deleting champion image from Cloudinary:', error);
+      }
     }
 
-    // Soft delete
-    champion.isActive = false;
-    await champion.save();
+    // Actually delete the champion from database
+    await Champion.findByIdAndDelete(req.params.id);
 
     res.json(ApiResponse.success(null, 'Champion deleted successfully'));
   } catch (error) {

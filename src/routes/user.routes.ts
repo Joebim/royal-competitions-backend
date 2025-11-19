@@ -11,6 +11,7 @@ import {
   getUserProfileWithStats,
   getMyTickets,
   getMyOrdersGrouped,
+  updateMyProfile,
 } from '../controllers/user.controller';
 import {
   getMyOrders,
@@ -23,6 +24,7 @@ import {
   resetAdminUserPasswordSchema,
   toggleAdminUserStatusSchema,
   updateAdminUserSchema,
+  updateMyProfileSchema,
 } from '../validators/user.validator';
 
 const router = Router();
@@ -35,6 +37,8 @@ router.get('/me/tickets', getMyTickets);
 router.get('/me/orders/grouped', getMyOrdersGrouped);
 router.get('/me/entries', getMyEntries);
 router.get('/me/orders', getMyOrders);
+router.put('/me', validate(updateMyProfileSchema), updateMyProfile);
+router.patch('/me', validate(updateMyProfileSchema), updateMyProfile);
 
 router.use(adminOnly);
 router.post('/', validate(createAdminUserSchema), createUserByAdmin);

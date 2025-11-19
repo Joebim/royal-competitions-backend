@@ -49,6 +49,22 @@ export const toggleAdminUserStatusSchema = Joi.object({
   isActive: Joi.boolean(),
 });
 
+export const updateMyProfileSchema = Joi.object({
+  firstName: Joi.string().trim().min(2).max(50).optional(),
+  lastName: Joi.string().trim().min(2).max(50).optional(),
+  phone: Joi.string()
+    .replace(/\s+/g, '') // Remove all spaces
+    .replace(/-/g, '') // Remove dashes
+    .pattern(phoneRegex)
+    .messages({
+      'string.pattern.base': 'Phone number must be a valid UK number (e.g., +447123456789 or 07123456789)',
+    })
+    .allow(null, '')
+    .optional(),
+  isSubscribed: Joi.boolean().optional(),
+  subscribedToNewsletter: Joi.boolean().optional(), // Also accept the model field name
+}).min(1);
+
 
 
 
