@@ -30,49 +30,6 @@ const questionSchema = Joi.object({
   return value;
 });
 
-const freeEntrySectionSchema = Joi.object({
-  heading: Joi.string().trim().min(1).max(200).required(),
-  // Body paragraphs – now allow empty strings and even an empty array
-  // so you can use only lists if you want.
-  body: Joi.array()
-    .items(Joi.string().trim().allow(''))
-    .min(0)
-    .optional(),
-  list: Joi.object({
-    title: Joi.string().trim().max(200).optional(),
-    items: Joi.array().items(Joi.string().trim().min(1)).optional(),
-  }).optional(),
-});
-
-const freeEntryDetailsSchema = Joi.alternatives().try(
-  Joi.object({
-    intro: Joi.string().trim().max(4000).allow('', null).optional(),
-    sections: Joi.array().items(freeEntrySectionSchema).min(1).required(),
-  }),
-  Joi.string().custom((value, helpers) => {
-    try {
-      const parsed = JSON.parse(value);
-      // Re-validate parsed as object to reuse the same rules
-      const { error, value: validated } = Joi.object({
-        intro: Joi.string().trim().max(4000).allow('', null).optional(),
-        sections: Joi.array().items(freeEntrySectionSchema).min(1).required(),
-      }).validate(parsed, { abortEarly: false });
-
-      if (error) {
-        return helpers.error('any.custom', {
-          message: error.details.map((d) => d.message.replace(/["]/g, '')).join('; '),
-        });
-      }
-
-      return validated;
-    } catch {
-      return helpers.error('any.custom', {
-        message: 'freeEntryDetails must be valid JSON',
-      });
-    }
-  })
-);
-
 export const createCompetitionSchema = Joi.object({
   title: Joi.string().min(5).max(200).required(),
   shortDescription: Joi.string().max(280),
@@ -95,6 +52,7 @@ export const createCompetitionSchema = Joi.object({
     'draft',
     'live',
     'closed',
+    'ended',
     'drawn',
     'cancelled'
   ),
@@ -102,7 +60,6 @@ export const createCompetitionSchema = Joi.object({
   drawAt: Joi.date().required(), // When the draw should occur
   freeEntryEnabled: Joi.boolean(),
   noPurchasePostalAddress: Joi.string().allow(''),
-  freeEntryDetails: freeEntryDetailsSchema.optional(),
   termsUrl: Joi.string().uri().allow(''),
   question: questionSchema.optional().allow(null), // Optional skill question
   startDate: Joi.date(),
@@ -134,7 +91,3 @@ export const updateCompetitionSchema = createCompetitionSchema.fork(
 export const validateCompetitionAnswerSchema = Joi.object({
   answer: Joi.string().trim().required(),
 });
-
-
-
-

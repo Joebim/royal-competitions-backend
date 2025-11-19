@@ -8,7 +8,7 @@ import swaggerUi from 'swagger-ui-express';
 import { config } from './config/environment';
 import routes from './routes';
 import swaggerSpec from './config/swagger';
-import { handleWebhook as stripeWebhookHandler } from './controllers/payment.controller';
+import { handleWebhook } from './controllers/payment.controller';
 import { errorHandler } from './middleware/errorHandler.middleware';
 import { rateLimiter } from './middleware/rateLimiter.middleware';
 import logger from './utils/logger';
@@ -41,11 +41,11 @@ app.use(
 app.use(mongoSanitize());
 app.use(cookieParser());
 
-// Stripe webhook route MUST use raw body (needs to be before express.json)
+// PayPal webhook route MUST use raw body (needs to be before express.json)
 app.post(
   '/api/v1/payments/webhook',
   express.raw({ type: 'application/json' }),
-  stripeWebhookHandler
+  handleWebhook
 );
 
 // Body parsing middleware

@@ -12,7 +12,8 @@ import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
 import { getPagination } from '../utils/pagination';
 import { UserRole } from '../models';
-import stripeService from '../services/stripe.service';
+import paypalService from '../services/paypal.service';
+import { config } from '../config/environment';
 import { generateOrderNumber } from '../utils/randomGenerator';
 
 const formatOrderResponse = (order: any) => {
@@ -28,7 +29,7 @@ const formatOrderResponse = (order: any) => {
     quantity: doc.quantity,
     status: doc.status,
     paymentStatus: doc.paymentStatus,
-    stripePaymentIntent: doc.stripePaymentIntent,
+    paypalOrderId: doc.paypalOrderId,
     ticketsReserved: doc.ticketsReserved,
     paymentReference: doc.paymentReference,
     billingDetails: doc.billingDetails,
@@ -128,10 +129,22 @@ export const getOrderById = async (
     // Populate competition for response
     await order.populate('competitionId', 'title prize images');
 
+    // Get tickets for this order
+    const tickets = await Ticket.find({
+      orderId: order._id,
+      status: { $in: [TicketStatus.ACTIVE, TicketStatus.WINNER] },
+    })
+      .select('ticketNumber status createdAt')
+      .sort({ ticketNumber: 1 })
+      .lean();
+
+    const orderResponse = formatOrderResponse(order);
+    (orderResponse as any).tickets = tickets;
+
     res.json(
       ApiResponse.success(
-        { order: formatOrderResponse(order) },
-        'Order retrieved successfully'
+        { order: orderResponse },
+        'Order status retrieved successfully'
       )
     );
   } catch (error) {
@@ -258,6 +271,34 @@ export const createOrder = async (
       throw new ApiError('Competition not found', 404);
     }
 
+    // Check if competition is available for purchase
+    if (
+      competition.status === 'ended' ||
+      competition.status === 'drawn' ||
+      competition.status === 'cancelled'
+    ) {
+      throw new ApiError(
+        'This competition is no longer accepting entries',
+        400
+      );
+    }
+
+    // Check if competition has ended (endDate passed)
+    if (competition.endDate && competition.endDate <= new Date()) {
+      throw new ApiError(
+        'This competition has ended and is no longer accepting entries',
+        400
+      );
+    }
+
+    // Check if competition is active and live
+    if (!competition.isActive || competition.status !== 'live') {
+      throw new ApiError(
+        'This competition is not currently accepting entries',
+        400
+      );
+    }
+
     // Verify reserved tickets exist and are still reserved
     const reservedTickets = await Ticket.find({
       competitionId,
@@ -304,20 +345,20 @@ export const createOrder = async (
       marketingOptIn: marketingOptIn || false,
     });
 
-    // Create payment intent
+    // Create PayPal order
     const orderId = String(order._id);
-    const paymentIntent = await stripeService.createPaymentIntent({
-      amount: amountPence, // Already in pence
-      currency: 'gbp',
-      metadata: {
-        orderId: orderId,
-        competitionId: competitionId,
-        userId: req.user?._id?.toString() || 'guest',
-      },
+    const paypalOrder = await paypalService.createOrder({
+      amount: amountPence, // Amount in pence
+      currency: 'GBP',
+      orderId: orderId,
+      userId: req.user?._id?.toString() || 'guest',
+      competitionId: competitionId,
+      returnUrl: `${config.frontendUrl}/payment/success?orderId=${orderId}`,
+      cancelUrl: `${config.frontendUrl}/payment/cancel?orderId=${orderId}`,
     });
 
-    // Update order with payment intent
-    order.stripePaymentIntent = paymentIntent.id;
+    // Update order with PayPal order ID
+    order.paypalOrderId = paypalOrder.id;
     await order.save();
 
     // Create event log
@@ -338,7 +379,8 @@ export const createOrder = async (
       ApiResponse.success(
         {
           order: formatOrderResponse(order),
-          clientSecret: paymentIntent.client_secret,
+          paypalOrderId: paypalOrder.id,
+          orderID: paypalOrder.id, // For PayPal Buttons
         },
         'Order created successfully'
       )

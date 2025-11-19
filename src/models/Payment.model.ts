@@ -15,7 +15,6 @@ export interface IPayment extends Document {
   status: PaymentStatus;
   paymentIntentId: string;
   paymentMethod?: string;
-  stripeCustomerId?: string;
   refundId?: string;
   refundAmount?: number;
   metadata?: Record<string, any>;
@@ -56,7 +55,6 @@ const paymentSchema = new Schema<IPayment>(
       unique: true, // unique: true automatically creates an index
     },
     paymentMethod: String,
-    stripeCustomerId: String,
     refundId: String,
     refundAmount: Number,
     metadata: Schema.Types.Mixed,

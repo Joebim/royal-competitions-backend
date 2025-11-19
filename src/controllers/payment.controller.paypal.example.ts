@@ -1,3 +1,10 @@
+/**
+ * PAYPAL PAYMENT CONTROLLER EXAMPLE
+ *
+ * This is an example of how to update payment.controller.ts to use PayPal instead of Stripe.
+ * Replace the existing payment.controller.ts with this implementation.
+ */
+
 import { Request, Response, NextFunction } from 'express';
 import {
   Order,
@@ -31,7 +38,7 @@ export const createPayPalOrder = async (
   req: Request,
   res: Response,
   next: NextFunction
-): Promise<void> => {
+) => {
   try {
     const { amount, orderId } = req.body;
 
@@ -99,7 +106,6 @@ export const createPayPalOrder = async (
         'PayPal order created'
       )
     );
-    return;
   } catch (error) {
     next(error);
   }
@@ -171,26 +177,15 @@ export const capturePayment = async (
         captureResult.purchase_units?.[0]?.payments?.captures?.[0];
 
       if (capture && order) {
-        // If order doesn't have userId but user is authenticated, update order with userId
-        if (!order.userId && req.user?._id) {
-          order.userId = req.user._id as any;
-          await order.save();
-          logger.info(
-            `Updated order ${order._id} with userId ${req.user._id} from authenticated user`
-          );
-        }
-        await handlePaymentSuccess(
-          {
-            ...capture,
-            order_id: paypalOrderId,
-            supplementary_data: {
-              related_ids: {
-                order_id: paypalOrderId,
-              },
+        await handlePaymentSuccess({
+          ...capture,
+          order_id: paypalOrderId,
+          supplementary_data: {
+            related_ids: {
+              order_id: paypalOrderId,
             },
           },
-          req.user?._id // Pass authenticated user ID if available
-        );
+        });
       }
 
       res.json(
@@ -284,10 +279,7 @@ export const handleWebhook = async (
  * Handle successful payment
  * Issues tickets and updates order status
  */
-export async function handlePaymentSuccess(
-  capture: any,
-  authenticatedUserId?: any
-) {
+export async function handlePaymentSuccess(capture: any) {
   try {
     // Find order by PayPal order ID
     const paypalOrderId =
@@ -298,15 +290,6 @@ export async function handlePaymentSuccess(
     if (!order) {
       logger.error(`Order not found for PayPal order ${paypalOrderId}`);
       return;
-    }
-
-    // If order doesn't have userId but authenticatedUserId is provided, update order
-    if (!order.userId && authenticatedUserId) {
-      order.userId = authenticatedUserId;
-      await order.save();
-      logger.info(
-        `Updated order ${order._id} with userId ${authenticatedUserId} from authenticated user`
-      );
     }
 
     // Check idempotency - if order is already paid, skip
@@ -322,8 +305,7 @@ export async function handlePaymentSuccess(
     await order.save();
 
     // Update reserved tickets to active
-    // First, try to find tickets by RESERVED status
-    const updateResult = await Ticket.updateMany(
+    await Ticket.updateMany(
       {
         competitionId: order.competitionId,
         ticketNumber: { $in: order.ticketsReserved },
@@ -333,77 +315,12 @@ export async function handlePaymentSuccess(
         $set: {
           status: TicketStatus.ACTIVE,
           orderId: order._id,
-          userId: order.userId || null, // Set userId even if null (for guest orders)
+          userId: order.userId,
         },
         $unset: {
           reservedUntil: 1,
         },
       }
-    );
-
-    // If no tickets were updated, check if tickets exist at all
-    if (updateResult.matchedCount === 0) {
-      logger.warn(
-        `No RESERVED tickets found for order ${order._id}, checking if tickets exist`
-      );
-
-      // Check if any tickets exist with these numbers (regardless of status)
-      const existingTickets = await Ticket.find({
-        competitionId: order.competitionId,
-        ticketNumber: { $in: order.ticketsReserved },
-      });
-
-      const existingNumbers = new Set(
-        existingTickets.map((t) => t.ticketNumber)
-      );
-      const missingNumbers = order.ticketsReserved.filter(
-        (num) => !existingNumbers.has(num)
-      );
-
-      // If tickets don't exist, create them as ACTIVE
-      if (missingNumbers.length > 0) {
-        logger.info(
-          `Creating ${missingNumbers.length} missing tickets for order ${order._id}`
-        );
-        const ticketsToCreate = missingNumbers.map((ticketNumber) => ({
-          competitionId: order.competitionId,
-          ticketNumber,
-          status: TicketStatus.ACTIVE,
-          orderId: order._id,
-          userId: order.userId || null,
-        }));
-
-        await Ticket.insertMany(ticketsToCreate);
-        logger.info(
-          `Created ${missingNumbers.length} tickets for order ${order._id}`
-        );
-      }
-
-      // Update any existing tickets that aren't already ACTIVE
-      if (existingTickets.length > 0) {
-        await Ticket.updateMany(
-          {
-            competitionId: order.competitionId,
-            ticketNumber: { $in: order.ticketsReserved },
-            status: { $ne: TicketStatus.ACTIVE }, // Only update if not already ACTIVE
-          },
-          {
-            $set: {
-              status: TicketStatus.ACTIVE,
-              orderId: order._id,
-              userId: order.userId || null,
-            },
-            $unset: {
-              reservedUntil: 1,
-            },
-          }
-        );
-      }
-    }
-
-    // Log the update for debugging
-    logger.info(
-      `Updated ${updateResult.modifiedCount} tickets to ACTIVE for order ${order._id}, userId: ${order.userId || 'null'}`
     );
 
     // Increment competition ticketsSold
@@ -485,107 +402,6 @@ export async function handlePaymentSuccess(
     logger.info(`Payment succeeded and tickets issued for order ${order._id}`);
   } catch (error: any) {
     logger.error('Handle payment success error:', error);
-  }
-}
-
-/**
- * Fix tickets for a paid order that doesn't have tickets
- * This is a utility function to retroactively create tickets for orders
- * that were paid but tickets weren't created
- */
-export async function fixOrderTickets(orderId: string) {
-  try {
-    const order = await Order.findById(orderId);
-    if (!order) {
-      throw new ApiError('Order not found', 404);
-    }
-
-    if (order.paymentStatus !== OrderPaymentStatus.PAID) {
-      throw new ApiError('Order is not paid', 400);
-    }
-
-    // Check if tickets already exist
-    const existingTickets = await Ticket.find({
-      orderId: order._id,
-      status: { $in: [TicketStatus.ACTIVE, TicketStatus.WINNER] },
-    });
-
-    if (existingTickets.length === order.quantity) {
-      logger.info(
-        `Order ${order._id} already has ${existingTickets.length} tickets`
-      );
-      return {
-        created: 0,
-        updated: 0,
-        total: existingTickets.length,
-      };
-    }
-
-    // Check which ticket numbers need to be created
-    const existingNumbers = new Set(existingTickets.map((t) => t.ticketNumber));
-    const missingNumbers = order.ticketsReserved.filter(
-      (num) => !existingNumbers.has(num)
-    );
-
-    let created = 0;
-    let updated = 0;
-
-    // Create missing tickets
-    if (missingNumbers.length > 0) {
-      const ticketsToCreate = missingNumbers.map((ticketNumber) => ({
-        competitionId: order.competitionId,
-        ticketNumber,
-        status: TicketStatus.ACTIVE,
-        orderId: order._id,
-        userId: order.userId || null,
-      }));
-
-      try {
-        await Ticket.insertMany(ticketsToCreate);
-        created = missingNumbers.length;
-        logger.info(`Created ${created} tickets for order ${order._id}`);
-      } catch (error: any) {
-        if (error.code === 11000) {
-          // Duplicate key - some tickets might have been created
-          logger.warn(
-            `Some tickets already exist for order ${order._id}, updating existing ones`
-          );
-        } else {
-          throw error;
-        }
-      }
-    }
-
-    // Update any existing tickets to ensure they're linked to the order
-    const updateResult = await Ticket.updateMany(
-      {
-        competitionId: order.competitionId,
-        ticketNumber: { $in: order.ticketsReserved },
-        orderId: { $ne: order._id },
-      },
-      {
-        $set: {
-          orderId: order._id,
-          userId: order.userId || null,
-          status: TicketStatus.ACTIVE,
-        },
-      }
-    );
-
-    updated = updateResult.modifiedCount;
-
-    logger.info(
-      `Fixed tickets for order ${order._id}: created ${created}, updated ${updated}`
-    );
-
-    return {
-      created,
-      updated,
-      total: created + existingTickets.length + updated,
-    };
-  } catch (error: any) {
-    logger.error(`Error fixing tickets for order ${orderId}:`, error);
-    throw error;
   }
 }
 

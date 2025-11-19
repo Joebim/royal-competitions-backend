@@ -1,9 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
-import { Cart, Competition } from '../models';
+import { Cart, Competition, Ticket, TicketStatus } from '../models';
 import { CompetitionStatus } from '../models/Competition.model';
 import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
+import logger from '../utils/logger';
 
 const MAX_TICKETS_PER_ITEM = 20;
 
@@ -297,6 +298,28 @@ export const removeCartItem = async (
       throw new ApiError('Cart item not found', 404);
     }
 
+    const competitionId = item.competitionId;
+
+    // Unreserve any tickets for this competition that belong to this user
+    try {
+      const now = new Date();
+      const unreservedResult = await Ticket.deleteMany({
+        competitionId,
+        userId: req.user._id,
+        status: TicketStatus.RESERVED,
+        reservedUntil: { $gt: now }, // Only unreserve non-expired reservations
+      });
+
+      if (unreservedResult.deletedCount > 0) {
+        logger.info(
+          `Unreserved ${unreservedResult.deletedCount} ticket(s) for user ${req.user._id} in competition ${competitionId} when removing from cart`
+        );
+      }
+    } catch (unreserveError) {
+      // Log but don't fail the request if unreserving fails
+      logger.warn('Error unreserving tickets when removing cart item:', unreserveError);
+    }
+
     item.deleteOne();
     await cart.save();
 
@@ -319,6 +342,32 @@ export const clearCart = async (
   try {
     if (!req.user) {
       throw new ApiError('Not authorized', 401);
+    }
+
+    // Get cart to find all competition IDs before clearing
+    const cart = await Cart.findOne({ userId: req.user._id });
+    const competitionIds = cart?.items?.map((item: any) => item.competitionId) || [];
+
+    // Unreserve all tickets for all competitions in the cart
+    if (competitionIds.length > 0) {
+      try {
+        const now = new Date();
+        const unreservedResult = await Ticket.deleteMany({
+          competitionId: { $in: competitionIds },
+          userId: req.user._id,
+          status: TicketStatus.RESERVED,
+          reservedUntil: { $gt: now }, // Only unreserve non-expired reservations
+        });
+
+        if (unreservedResult.deletedCount > 0) {
+          logger.info(
+            `Unreserved ${unreservedResult.deletedCount} ticket(s) for user ${req.user._id} when clearing cart`
+          );
+        }
+      } catch (unreserveError) {
+        // Log but don't fail the request if unreserving fails
+        logger.warn('Error unreserving tickets when clearing cart:', unreserveError);
+      }
     }
 
     await Cart.findOneAndUpdate(

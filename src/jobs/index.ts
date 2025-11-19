@@ -6,18 +6,35 @@ import { runAutomaticDraw } from '../controllers/draw.controller';
 
 /**
  * Clean up expired reservations
- * Runs every 5 minutes
+ * Runs every 2 minutes for more aggressive cleanup
+ * Also handles reservations that are past their expiration time
  */
 const cleanupExpiredReservations = async () => {
   try {
     const now = new Date();
+    
+    // Delete expired reservations
     const result = await Ticket.deleteMany({
       status: TicketStatus.RESERVED,
-      reservedUntil: { $lt: now },
+      $or: [
+        { reservedUntil: { $lt: now } },
+        { reservedUntil: { $exists: false } }, // Handle tickets without reservedUntil
+      ],
     });
 
     if (result.deletedCount > 0) {
       logger.info(`Cleaned up ${result.deletedCount} expired reservations`);
+    }
+
+    // Also clean up any reservations older than 20 minutes (safety net)
+    const twentyMinutesAgo = new Date(now.getTime() - 20 * 60 * 1000);
+    const oldReservations = await Ticket.deleteMany({
+      status: TicketStatus.RESERVED,
+      createdAt: { $lt: twentyMinutesAgo },
+    });
+
+    if (oldReservations.deletedCount > 0) {
+      logger.info(`Cleaned up ${oldReservations.deletedCount} old reservations (safety net)`);
     }
   } catch (error: any) {
     logger.error('Error cleaning up expired reservations:', error);
@@ -35,7 +52,7 @@ const runAutomaticDraws = async () => {
     const oneMinuteAgo = new Date(now.getTime() - 60 * 1000);
 
     const competitions = await Competition.find({
-      status: { $in: [CompetitionStatus.LIVE, CompetitionStatus.CLOSED] },
+      status: { $in: [CompetitionStatus.LIVE, CompetitionStatus.CLOSED, CompetitionStatus.ENDED] },
       drawMode: DrawMode.AUTOMATIC,
       drawAt: { $lte: now, $gte: oneMinuteAgo },
       drawnAt: { $exists: false }, // Not yet drawn
@@ -82,9 +99,34 @@ const closeCompetitionsAtLimit = async () => {
   }
 };
 
+/**
+ * End competitions that have passed their endDate
+ * Runs every 5 minutes
+ */
+const endCompetitionsPastEndDate = async () => {
+  try {
+    const now = new Date();
+    const competitions = await Competition.find({
+      status: { $in: [CompetitionStatus.LIVE, CompetitionStatus.CLOSED] },
+      endDate: { $exists: true, $lte: now },
+    });
+
+    for (const competition of competitions) {
+      if (competition.endDate && competition.endDate <= now) {
+        competition.status = CompetitionStatus.ENDED;
+        competition.isActive = false;
+        await competition.save();
+        logger.info(`Ended competition ${competition._id} - endDate passed`);
+      }
+    }
+  } catch (error: any) {
+    logger.error('Error ending competitions past endDate:', error);
+  }
+};
+
 export const startScheduledJobs = () => {
-  // Clean up expired reservations every 5 minutes
-  cron.schedule('*/5 * * * *', () => {
+  // Clean up expired reservations every 2 minutes for more aggressive cleanup
+  cron.schedule('*/2 * * * *', () => {
     logger.info('Running reservation cleanup job');
     cleanupExpiredReservations();
   });
@@ -99,6 +141,12 @@ export const startScheduledJobs = () => {
   cron.schedule('*/5 * * * *', () => {
     logger.info('Running competition limit check job');
     closeCompetitionsAtLimit();
+  });
+
+  // End competitions past endDate every 5 minutes
+  cron.schedule('*/5 * * * *', () => {
+    logger.info('Running competition end date check job');
+    endCompetitionsPastEndDate();
   });
 
   logger.info('Scheduled jobs started');

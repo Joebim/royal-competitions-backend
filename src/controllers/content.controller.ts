@@ -56,6 +56,7 @@ const formatCompetitionCard = (competition: any) => ({
   ticketPrice: competition.ticketPricePence
     ? (competition.ticketPricePence / 100).toFixed(2)
     : '0.00',
+  cashAlternative: competition.cashAlternative || null,
   maxTickets: competition.ticketLimit,
   soldTickets: competition.ticketsSold,
   progress: calculateProgress(

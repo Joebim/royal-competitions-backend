@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { FilterQuery, SortOrder } from 'mongoose';
-import { Competition, Entry, UserRole, Category } from '../models';
+import { Competition, Entry, UserRole, Category, Ticket, TicketStatus } from '../models';
 import { CompetitionStatus, ICompetition } from '../models/Competition.model';
 import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
@@ -282,13 +282,6 @@ const parseCompetitionPayload = (body: any) => {
     payload.noPurchasePostalAddress = body.noPurchasePostalAddress;
   }
 
-  // Free entry details (rich content for postal entries)
-  // At this point, validation middleware/Joi should already have ensured
-  // that this is either a valid object or has been parsed from JSON.
-  if (body.freeEntryDetails !== undefined) {
-    payload.freeEntryDetails = body.freeEntryDetails as any;
-  }
-
   // Terms URL
   if (body.termsUrl !== undefined) {
     payload.termsUrl = body.termsUrl;
@@ -508,24 +501,39 @@ export const getCompetitionProgress = async (
       throw new ApiError('Competition not found', 404);
     }
 
+    // Calculate actual sold tickets from database (ACTIVE + WINNER tickets)
+    // This ensures accuracy even if ticketsSold counter gets out of sync
+    const actualSoldTickets = await Ticket.countDocuments({
+      competitionId: competition._id,
+      status: { $in: [TicketStatus.ACTIVE, TicketStatus.WINNER] },
+    });
+
+    // Sync ticketsSold counter if there's a mismatch (but don't update if actual is less - might be refunds)
+    // Only sync if actual is greater (indicates counter lag)
+    if (actualSoldTickets > competition.ticketsSold) {
+      competition.ticketsSold = actualSoldTickets;
+      await competition.save();
+    }
+
+    // Use the synced value
+    const soldTickets = Math.max(competition.ticketsSold, actualSoldTickets);
+
     const remaining =
       competition.ticketLimit === null
         ? Infinity
-        : Math.max(competition.ticketLimit - competition.ticketsSold, 0);
+        : Math.max(competition.ticketLimit - soldTickets, 0);
 
     res.json(
       ApiResponse.success(
         {
           progress: {
-            soldTickets: competition.ticketsSold,
+            soldTickets,
             maxTickets: competition.ticketLimit,
             entriesRemaining: remaining === Infinity ? null : remaining,
             percentage:
               competition.ticketLimit === null || competition.ticketLimit === 0
                 ? 0
-                : Math.round(
-                    (competition.ticketsSold / competition.ticketLimit) * 100
-                  ),
+                : Math.round((soldTickets / competition.ticketLimit) * 100),
           },
           status: competition.status,
           drawAt: competition.drawAt,

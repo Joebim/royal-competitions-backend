@@ -16,10 +16,12 @@ interface Config {
     refreshSecret: string;
     refreshExpire: string;
   };
-  stripe: {
-    secretKey: string;
-    publishableKey: string;
-    webhookSecret: string;
+  paypal: {
+    clientId: string;
+    clientSecret: string;
+    baseUrl: string;
+    webhookId: string;
+    mode: string;
   };
   cloudinary: {
     cloudName: string;
@@ -83,10 +85,12 @@ export const config: Config = {
     refreshSecret: process.env.JWT_REFRESH_SECRET || 'your_refresh_secret',
     refreshExpire: process.env.JWT_REFRESH_EXPIRE || '30d',
   },
-  stripe: {
-    secretKey: process.env.STRIPE_SECRET_KEY || '',
-    publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || '',
-    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+  paypal: {
+    clientId: process.env.PAYPAL_CLIENT_ID || '',
+    clientSecret: process.env.PAYPAL_CLIENT_SECRET || '',
+    baseUrl: process.env.PAYPAL_BASE_URL || 'https://api-m.sandbox.paypal.com',
+    webhookId: process.env.PAYPAL_WEBHOOK_ID || '',
+    mode: process.env.PAYPAL_MODE || 'sandbox', // 'sandbox' or 'live'
   },
   cloudinary: {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',

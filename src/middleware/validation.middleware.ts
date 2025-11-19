@@ -16,7 +16,6 @@ const parseFormDataJsonFields = (body: any): any => {
     'features',
     'included',
     'tags',
-    'freeEntryDetails', // NEW: complex object for free entry/postal details
   ];
 
   jsonFields.forEach((field) => {

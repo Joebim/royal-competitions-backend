@@ -15,6 +15,7 @@ const billingDetailsSchema = Joi.object({
   phone: Joi.string().trim().max(20).optional(),
 });
 
+// Schema for creating PayPal order (replaces old Stripe payment intent)
 export const createPaymentIntentSchema = Joi.object({
   orderId: Joi.string().required(),
   billingDetails: billingDetailsSchema.optional(),
@@ -23,11 +24,8 @@ export const createPaymentIntentSchema = Joi.object({
 });
 
 export const confirmCheckoutSchema = Joi.object({
-  paymentIntentId: Joi.string().required(),
   orderId: Joi.string().optional(),
-  billingDetails: billingDetailsSchema.optional(),
-  billingAddress: addressSchema.optional(),
-  shippingAddress: addressSchema.optional(),
-});
+  paypalOrderId: Joi.string().optional(),
+}).or('orderId', 'paypalOrderId'); // At least one must be provided
 
 
