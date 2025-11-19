@@ -17,6 +17,8 @@ import { ApiResponse } from '../utils/apiResponse';
 import { getPagination } from '../utils/pagination';
 import drawService from '../services/draw.service';
 import klaviyoService from '../services/klaviyo.service';
+import emailService from '../services/email.service';
+import { config } from '../config/environment';
 import logger from '../utils/logger';
 
 /**
@@ -125,17 +127,40 @@ export const runDraw = async (
       if (isPrimary && ticket.userId) {
         const user = await User.findById(ticket.userId);
         if (user && user.email) {
-          await klaviyoService.trackWinnerNotification(
-            user.email,
-            user.phone,
-            String(competition._id),
-            competition.title,
-            competition.prize,
-            ticket.ticketNumber,
-            winner[0].claimCode,
-            user.firstName,
-            user.lastName
-          );
+          // Send Klaviyo notification
+          try {
+            await klaviyoService.trackWinnerNotification(
+              user.email,
+              user.phone,
+              String(competition._id),
+              competition.title,
+              competition.prize,
+              ticket.ticketNumber,
+              winner[0].claimCode,
+              user.firstName,
+              user.lastName
+            );
+          } catch (error: any) {
+            logger.error('Error sending Klaviyo winner notification:', error);
+          }
+
+          // Send email notification
+          try {
+            const claimUrl = `${config.frontendUrl}/winners/${winner[0]._id}/claim?code=${winner[0].claimCode}`;
+            await emailService.sendWinnerNotificationEmail({
+              email: user.email,
+              firstName: user.firstName,
+              lastName: user.lastName,
+              competitionTitle: competition.title,
+              ticketNumber: ticket.ticketNumber,
+              prize: competition.prize,
+              drawDate: draw.createdAt.toISOString(),
+              claimUrl,
+            });
+            logger.info(`Winner notification email sent to ${user.email}`);
+          } catch (error: any) {
+            logger.error('Error sending winner notification email:', error);
+          }
 
           // Mark as notified
           winner[0].notified = true;

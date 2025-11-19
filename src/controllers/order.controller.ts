@@ -6,6 +6,7 @@ import {
   TicketStatus,
   Event,
   EventType,
+  User,
 } from '../models';
 import { OrderPaymentStatus, OrderStatus } from '../models/Order.model';
 import { ApiError } from '../utils/apiError';
@@ -15,6 +16,8 @@ import { UserRole } from '../models';
 import paypalService from '../services/paypal.service';
 import { config } from '../config/environment';
 import { generateOrderNumber } from '../utils/randomGenerator';
+import emailService from '../services/email.service';
+import logger from '../utils/logger';
 
 const formatOrderResponse = (order: any) => {
   const doc = order.toObject ? order.toObject() : order;
@@ -374,6 +377,28 @@ export const createOrder = async (
         ticketsReserved,
       },
     });
+
+    // Send order confirmation email
+    if (billingDetails?.email) {
+      try {
+        const user = req.user?._id ? await User.findById(req.user._id) : null;
+        await emailService.sendOrderConfirmationEmail({
+          email: billingDetails.email,
+          firstName:
+            user?.firstName || billingDetails.firstName || 'Valued Customer',
+          lastName: user?.lastName || billingDetails.lastName,
+          orderNumber: order.orderNumber,
+          competitionTitle: competition.title,
+          ticketNumbers: ticketsReserved,
+          amountGBP: (amountPence / 100).toFixed(2),
+          orderId: String(order._id),
+        });
+        logger.info(`Order confirmation email sent to ${billingDetails.email}`);
+      } catch (error: any) {
+        logger.error('Error sending order confirmation email:', error);
+        // Don't fail order creation if email fails
+      }
+    }
 
     res.status(201).json(
       ApiResponse.success(

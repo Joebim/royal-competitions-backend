@@ -33,6 +33,7 @@ This document explains the complete ticket purchase flow from the **frontend per
 ## Step 1: Browse Competitions
 
 ### User Action
+
 User views available competitions on the homepage or competition listing page.
 
 ### API Endpoint
@@ -40,12 +41,14 @@ User views available competitions on the homepage or competition listing page.
 **GET** `/api/v1/competitions`
 
 **Request:**
+
 ```http
 GET /api/v1/competitions?page=1&limit=10&status=live&category=electronics
 Authorization: Bearer <token> (optional)
 ```
 
 **Query Parameters:**
+
 - `page` (optional): Page number (default: 1)
 - `limit` (optional): Items per page (default: 10)
 - `status` (optional): Filter by status (live, closed, ended, etc.)
@@ -54,6 +57,7 @@ Authorization: Bearer <token> (optional)
 - `search` (optional): Search by title
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -84,9 +88,12 @@ Authorization: Bearer <token> (optional)
 ```
 
 ### Frontend Implementation
+
 ```typescript
 // Fetch competitions
-const response = await fetch('/api/v1/competitions?status=live&page=1&limit=10');
+const response = await fetch(
+  '/api/v1/competitions?status=live&page=1&limit=10'
+);
 const data = await response.json();
 // Display competitions in UI
 ```
@@ -96,9 +103,11 @@ const data = await response.json();
 ## Step 2: Add to Cart (Hold Tickets)
 
 ### User Action
+
 User clicks "Add to Cart" or "Buy Tickets" button for a competition.
 
 ### What Happens Behind the Scenes
+
 1. **Tickets are RESERVED** (created in database with status `RESERVED`)
 2. **Cart item is added** to user's cart
 3. Tickets expire after 15 minutes if not purchased
@@ -106,9 +115,11 @@ User clicks "Add to Cart" or "Buy Tickets" button for a competition.
 ### API Endpoints
 
 #### Option A: Add to Cart (Recommended)
+
 **POST** `/api/v1/cart/items`
 
 **Request:**
+
 ```http
 POST /api/v1/cart/items
 Authorization: Bearer <token>
@@ -121,6 +132,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -148,14 +160,17 @@ Content-Type: application/json
 ```
 
 **What Happens:**
+
 - System automatically reserves tickets (calls hold tickets internally)
 - Cart item is created/updated
 - Tickets are created with status `RESERVED` in database ✅
 
 #### Option B: Hold Tickets Directly (Alternative)
+
 **POST** `/api/v1/tickets/competitions/:id/hold`
 
 **Request:**
+
 ```http
 POST /api/v1/tickets/competitions/6919aa951f3d63a8102600ea/hold
 Authorization: Bearer <token>
@@ -167,6 +182,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -181,6 +197,7 @@ Content-Type: application/json
 ```
 
 **Then add to cart separately:**
+
 ```http
 POST /api/v1/cart/items
 {
@@ -190,6 +207,7 @@ POST /api/v1/cart/items
 ```
 
 ### Frontend Implementation
+
 ```typescript
 // Add to cart
 const addToCart = async (competitionId: string, quantity: number) => {
@@ -197,14 +215,14 @@ const addToCart = async (competitionId: string, quantity: number) => {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
       competitionId,
-      quantity
-    })
+      quantity,
+    }),
   });
-  
+
   const data = await response.json();
   // Update cart UI
   // Show success message
@@ -212,6 +230,7 @@ const addToCart = async (competitionId: string, quantity: number) => {
 ```
 
 ### Database State After This Step
+
 ```javascript
 // Tickets created in MongoDB
 {
@@ -230,6 +249,7 @@ const addToCart = async (competitionId: string, quantity: number) => {
 ## Step 3: View Cart
 
 ### User Action
+
 User navigates to cart page to review items before checkout.
 
 ### API Endpoint
@@ -237,12 +257,14 @@ User navigates to cart page to review items before checkout.
 **GET** `/api/v1/cart`
 
 **Request:**
+
 ```http
 GET /api/v1/cart
 Authorization: Bearer <token>
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -269,15 +291,16 @@ Authorization: Bearer <token>
 ```
 
 ### Frontend Implementation
+
 ```typescript
 // Fetch cart
 const getCart = async () => {
   const response = await fetch('/api/v1/cart', {
     headers: {
-      'Authorization': `Bearer ${token}`
-    }
+      Authorization: `Bearer ${token}`,
+    },
   });
-  
+
   const data = await response.json();
   // Display cart items
   // Show total
@@ -289,9 +312,11 @@ const getCart = async () => {
 ## Step 4: Checkout (Create Order)
 
 ### User Action
+
 User clicks "Checkout" or "Proceed to Payment" button.
 
 ### What Happens Behind the Scenes
+
 1. **Orders are created** for each competition in cart
 2. **Tickets are validated** (or re-reserved if expired)
 3. **PayPal order is created** for each order
@@ -302,6 +327,7 @@ User clicks "Checkout" or "Proceed to Payment" button.
 **POST** `/api/v1/checkout/payment-intent`
 
 **Request:**
+
 ```http
 POST /api/v1/checkout/payment-intent
 Authorization: Bearer <token>
@@ -326,6 +352,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -348,12 +375,14 @@ Content-Type: application/json
 ```
 
 **What Happens:**
+
 - Orders are created with status `PENDING`
 - Tickets remain `RESERVED` (or are re-reserved if expired)
 - PayPal orders are created
 - Returns `paypalOrderId` for each order
 
 ### Database State After This Step
+
 ```javascript
 // Order created
 {
@@ -377,6 +406,7 @@ Content-Type: application/json
 ```
 
 ### Frontend Implementation
+
 ```typescript
 // Create checkout
 const checkout = async (billingDetails, shippingAddress) => {
@@ -384,15 +414,15 @@ const checkout = async (billingDetails, shippingAddress) => {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
       billingDetails,
       shippingAddress,
-      marketingOptIn: true
-    })
+      marketingOptIn: true,
+    }),
   });
-  
+
   const data = await response.json();
   // Store order IDs and PayPal order IDs
   // Initialize PayPal Buttons with orderID
@@ -404,6 +434,7 @@ const checkout = async (billingDetails, shippingAddress) => {
 ## Step 5: Pay with PayPal
 
 ### User Action
+
 User clicks PayPal button and completes payment in PayPal popup/modal.
 
 ### Frontend Implementation (PayPal Buttons)
@@ -433,6 +464,7 @@ import { PayPalButtons } from '@paypal/react-paypal-js';
 ```
 
 ### What Happens:
+
 1. User clicks PayPal button
 2. PayPal popup opens
 3. User logs in and approves payment
@@ -444,6 +476,7 @@ import { PayPalButtons } from '@paypal/react-paypal-js';
 ## Step 6: Confirm Payment (Capture)
 
 ### User Action
+
 Payment is automatically captured after PayPal approval (via `onApprove` callback).
 
 ### API Endpoint
@@ -451,6 +484,7 @@ Payment is automatically captured after PayPal approval (via `onApprove` callbac
 **POST** `/api/v1/payments/capture-order`
 
 **Request:**
+
 ```http
 POST /api/v1/payments/capture-order
 Authorization: Bearer <token> (optional, but recommended)
@@ -463,6 +497,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -482,6 +517,7 @@ Content-Type: application/json
 ```
 
 **What Happens:**
+
 - Payment is captured from PayPal
 - Order status updated: `PENDING` → `COMPLETED`
 - Payment status updated: `PENDING` → `PAID`
@@ -490,6 +526,7 @@ Content-Type: application/json
 - Klaviyo notification sent (if configured)
 
 ### Database State After This Step
+
 ```javascript
 // Order updated
 {
@@ -508,6 +545,7 @@ Content-Type: application/json
 ```
 
 ### Frontend Implementation
+
 ```typescript
 // Capture payment
 const capturePayment = async (paypalOrderID: string, orderId: string) => {
@@ -522,9 +560,9 @@ const capturePayment = async (paypalOrderID: string, orderId: string) => {
       orderId: orderId
     })
   });
-  
+
   const data = await response.json();
-  
+
   if (data.success) {
     // Show success message
     // Redirect to success page
@@ -549,6 +587,7 @@ Same as `/capture-order`, just an alias for clarity.
 ## Step 7: View Order Details
 
 ### User Action
+
 User views order confirmation page or order details.
 
 ### API Endpoint
@@ -556,12 +595,14 @@ User views order confirmation page or order details.
 **GET** `/api/v1/orders/:id`
 
 **Request:**
+
 ```http
 GET /api/v1/orders/691d4633526cd4c76ba09d96
 Authorization: Bearer <token>
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -603,15 +644,16 @@ Authorization: Bearer <token>
 ```
 
 ### Frontend Implementation
+
 ```typescript
 // Get order details
 const getOrder = async (orderId: string) => {
   const response = await fetch(`/api/v1/orders/${orderId}`, {
     headers: {
-      'Authorization': `Bearer ${token}`
-    }
+      Authorization: `Bearer ${token}`,
+    },
   });
-  
+
   const data = await response.json();
   // Display order details
   // Show tickets
@@ -623,6 +665,7 @@ const getOrder = async (orderId: string) => {
 ## Step 8: View My Tickets
 
 ### User Action
+
 User navigates to "My Tickets" page to see all their purchased tickets.
 
 ### API Endpoint
@@ -630,17 +673,20 @@ User navigates to "My Tickets" page to see all their purchased tickets.
 **GET** `/api/v1/users/me/tickets`
 
 **Request:**
+
 ```http
 GET /api/v1/users/me/tickets?page=1&limit=10
 Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
+
 - `page` (optional): Page number (default: 1)
 - `limit` (optional): Items per page (default: 20)
 - `competitionId` (optional): Filter by competition
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -695,6 +741,7 @@ Authorization: Bearer <token>
 ```
 
 ### Frontend Implementation
+
 ```typescript
 // Get user tickets
 const getMyTickets = async (page = 1, limit = 10) => {
@@ -702,11 +749,11 @@ const getMyTickets = async (page = 1, limit = 10) => {
     `/api/v1/users/me/tickets?page=${page}&limit=${limit}`,
     {
       headers: {
-        'Authorization': `Bearer ${token}`
-      }
+        Authorization: `Bearer ${token}`,
+      },
     }
   );
-  
+
   const data = await response.json();
   // Display tickets grouped by competition
 };
@@ -723,6 +770,7 @@ If you're not using the cart system, you can create orders directly:
 **POST** `/api/v1/orders`
 
 **Request:**
+
 ```http
 POST /api/v1/orders
 Authorization: Bearer <token> (optional - supports guest checkout)
@@ -750,6 +798,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -837,7 +886,9 @@ Content-Type: application/json
 ### Common Errors and Solutions
 
 #### 1. Tickets Already Reserved
+
 **Error:**
+
 ```json
 {
   "success": false,
@@ -847,12 +898,15 @@ Content-Type: application/json
 ```
 
 **Solution:**
+
 - Refresh cart
 - Try again (tickets may have expired)
 - Remove item and re-add
 
 #### 2. Payment Capture Failed
+
 **Error:**
+
 ```json
 {
   "success": false,
@@ -861,12 +915,15 @@ Content-Type: application/json
 ```
 
 **Solution:**
+
 - Check PayPal account
 - Try payment again
 - Contact support if issue persists
 
 #### 3. Order Not Found
+
 **Error:**
+
 ```json
 {
   "success": false,
@@ -876,6 +933,7 @@ Content-Type: application/json
 ```
 
 **Solution:**
+
 - Verify order ID
 - Check if user has access to order
 - Contact support
@@ -884,17 +942,17 @@ Content-Type: application/json
 
 ## Status Codes Reference
 
-| Code | Meaning | When It Occurs |
-|------|---------|----------------|
-| 200 | Success | Request successful |
-| 201 | Created | Resource created successfully |
-| 400 | Bad Request | Invalid data or missing fields |
-| 401 | Unauthorized | Not authenticated |
-| 403 | Forbidden | Not authorized to access resource |
-| 404 | Not Found | Resource doesn't exist |
-| 409 | Conflict | Resource conflict (e.g., tickets already reserved) |
-| 422 | Validation Error | Request validation failed |
-| 500 | Server Error | Internal server error |
+| Code | Meaning          | When It Occurs                                     |
+| ---- | ---------------- | -------------------------------------------------- |
+| 200  | Success          | Request successful                                 |
+| 201  | Created          | Resource created successfully                      |
+| 400  | Bad Request      | Invalid data or missing fields                     |
+| 401  | Unauthorized     | Not authenticated                                  |
+| 403  | Forbidden        | Not authorized to access resource                  |
+| 404  | Not Found        | Resource doesn't exist                             |
+| 409  | Conflict         | Resource conflict (e.g., tickets already reserved) |
+| 422  | Validation Error | Request validation failed                          |
+| 500  | Server Error     | Internal server error                              |
 
 ---
 
@@ -940,4 +998,3 @@ Content-Type: application/json
 5. ✅ Display tickets after successful payment
 
 The system ensures tickets exist at every step! 🎉
-

@@ -6,6 +6,7 @@ import {
   Payment,
   Ticket,
   TicketStatus,
+  User,
 } from '../models';
 import { OrderPaymentStatus, OrderStatus } from '../models/Order.model';
 import { CompetitionStatus } from '../models/Competition.model';
@@ -14,6 +15,7 @@ import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
 import paypalService from '../services/paypal.service';
 import { config } from '../config/environment';
+import emailService from '../services/email.service';
 import logger from '../utils/logger';
 import { generateOrderNumber } from '../utils/randomGenerator';
 
@@ -282,6 +284,27 @@ export const createCheckoutFromCart = async (
         paymentIntentId: paypalOrder.id,
         status: PaymentStatus.PENDING,
       });
+
+      // Send order confirmation email
+      if (billingDetails?.email) {
+        try {
+          const user = await User.findById(req.user._id);
+          await emailService.sendOrderConfirmationEmail({
+            email: billingDetails.email,
+            firstName: user?.firstName || billingDetails.firstName || 'Valued Customer',
+            lastName: user?.lastName || billingDetails.lastName,
+            orderNumber: order.orderNumber,
+            competitionTitle: competition.title,
+            ticketNumbers: ticketsReserved,
+            amountGBP: (amountPence / 100).toFixed(2),
+            orderId: String(order._id),
+          });
+          logger.info(`Order confirmation email sent to ${billingDetails.email}`);
+        } catch (error: any) {
+          logger.error('Error sending order confirmation email:', error);
+          // Don't fail checkout if email fails
+        }
+      }
 
       orders.push({
         id: order._id,

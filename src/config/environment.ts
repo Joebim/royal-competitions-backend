@@ -42,10 +42,20 @@ interface Config {
     service: string;
     host: string;
     port: number;
-    user: string;
-    password: string;
-    from: string;
-    fromName: string;
+    // No-reply email configuration
+    noreply: {
+      user: string;
+      password: string;
+      email: string;
+      name: string;
+    };
+    // Info email configuration
+    info: {
+      user: string;
+      password: string;
+      email: string;
+      name: string;
+    };
   };
   rateLimit: {
     windowMs: number;
@@ -111,10 +121,20 @@ export const config: Config = {
     service: process.env.EMAIL_SERVICE || 'gmail',
     host: process.env.EMAIL_HOST || 'smtp.gmail.com',
     port: parseInt(process.env.EMAIL_PORT || '587', 10),
-    user: process.env.EMAIL_USER || '',
-    password: process.env.EMAIL_PASSWORD || '',
-    from: process.env.EMAIL_FROM || 'noreply@royalcompetitions.co.uk',
-    fromName: process.env.EMAIL_FROM_NAME || 'Royal Competitions',
+    // No-reply email configuration (for verification, password reset)
+    noreply: {
+      user: process.env.EMAIL_NOREPLY_USER || '',
+      password: process.env.EMAIL_NOREPLY_PASSWORD || '',
+      email: process.env.EMAIL_NOREPLY || 'noreply@royalcompetitions.co.uk',
+      name: process.env.EMAIL_NOREPLY_NAME || 'Royal Competitions',
+    },
+    // Info email configuration (for order updates, payments, winners)
+    info: {
+      user: process.env.EMAIL_INFO_USER || '',
+      password: process.env.EMAIL_INFO_PASSWORD || '',
+      email: process.env.EMAIL_INFO || 'info@royalcompetitions.co.uk',
+      name: process.env.EMAIL_INFO_NAME || 'Royal Competitions',
+    },
   },
   rateLimit: {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10),

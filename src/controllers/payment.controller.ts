@@ -17,6 +17,7 @@ import { ApiResponse } from '../utils/apiResponse';
 import paypalService from '../services/paypal.service';
 import { config } from '../config/environment';
 import klaviyoService from '../services/klaviyo.service';
+import emailService from '../services/email.service';
 import logger from '../utils/logger';
 
 /**
@@ -482,6 +483,26 @@ export async function handlePaymentSuccess(
       }
     }
 
+    // Send email notification
+    if (competitionForKlaviyo && order.billingDetails?.email) {
+      try {
+        await emailService.sendPaymentSuccessEmail({
+          email: order.billingDetails.email,
+          firstName: user?.firstName || order.billingDetails.firstName || 'Valued Customer',
+          lastName: user?.lastName || order.billingDetails.lastName,
+          orderNumber: order.orderNumber,
+          competitionTitle: competitionForKlaviyo.title,
+          ticketNumbers: order.ticketsReserved,
+          amountGBP: (order.amountPence / 100).toFixed(2),
+          orderId: String(order._id),
+        });
+        logger.info(`Payment success email sent to ${order.billingDetails.email}`);
+      } catch (error: any) {
+        logger.error('Error sending payment success email:', error);
+        // Don't fail the payment process if email fails
+      }
+    }
+
     logger.info(`Payment succeeded and tickets issued for order ${order._id}`);
   } catch (error: any) {
     logger.error('Handle payment success error:', error);
@@ -690,9 +711,12 @@ async function handleRefund(refund: any) {
     );
 
     // Decrement competition ticketsSold
-    await Competition.findByIdAndUpdate(order.competitionId, {
-      $inc: { ticketsSold: -order.quantity },
-    });
+    const competition = await Competition.findById(order.competitionId);
+    if (competition) {
+      await Competition.findByIdAndUpdate(order.competitionId, {
+        $inc: { ticketsSold: -order.quantity },
+      });
+    }
 
     // Create event log
     await Event.create([
@@ -709,6 +733,25 @@ async function handleRefund(refund: any) {
         },
       },
     ]);
+
+    // Send refund email notification
+    if (order.billingDetails?.email && competition) {
+      try {
+        const user = order.userId ? await User.findById(order.userId) : null;
+        await emailService.sendOrderRefundedEmail({
+          email: order.billingDetails.email,
+          firstName: user?.firstName || order.billingDetails.firstName || 'Valued Customer',
+          lastName: user?.lastName || order.billingDetails.lastName,
+          orderNumber: order.orderNumber,
+          competitionTitle: competition.title,
+          amountGBP: (order.amountPence / 100).toFixed(2),
+          refundReason: refund.reason || undefined,
+        });
+        logger.info(`Refund email sent to ${order.billingDetails.email}`);
+      } catch (error: any) {
+        logger.error('Error sending refund email:', error);
+      }
+    }
 
     logger.info(`Refund processed for capture ${captureId}`);
   } catch (error: any) {

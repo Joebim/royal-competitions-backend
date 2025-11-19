@@ -1,62 +1,92 @@
 import nodemailer from 'nodemailer';
 import { config } from '../config/environment';
 import logger from '../utils/logger';
+import emailTemplatesService from './emailTemplates.service';
 
 /**
  * Email service using Nodemailer
+ * Integrates with luxury email templates
+ * Supports separate SMTP credentials for noreply and info emails
  */
 class EmailService {
-  private transporter: nodemailer.Transporter;
+  private noreplyTransporter: nodemailer.Transporter;
+  private infoTransporter: nodemailer.Transporter;
 
   constructor() {
-    // Create transporter
-    this.transporter = nodemailer.createTransport({
+    // Create transporter for noreply emails
+    this.noreplyTransporter = nodemailer.createTransport({
       service: config.email.service,
       host: config.email.host,
       port: config.email.port,
       secure: config.email.port === 465, // true for 465, false for other ports
       auth: {
-        user: config.email.user,
-        pass: config.email.password,
+        user: config.email.noreply.user,
+        pass: config.email.noreply.password,
       },
     });
 
-    // Verify connection
-    this.verifyConnection();
+    // Create transporter for info emails
+    this.infoTransporter = nodemailer.createTransport({
+      service: config.email.service,
+      host: config.email.host,
+      port: config.email.port,
+      secure: config.email.port === 465, // true for 465, false for other ports
+      auth: {
+        user: config.email.info.user,
+        pass: config.email.info.password,
+      },
+    });
+
+    // Verify connections
+    this.verifyConnections();
   }
 
   /**
-   * Verify email connection
+   * Verify email connections
    */
-  private async verifyConnection(): Promise<void> {
+  private async verifyConnections(): Promise<void> {
     try {
-      await this.transporter.verify();
-      logger.info('Email service connected successfully');
+      await this.noreplyTransporter.verify();
+      logger.info('Noreply email service connected successfully');
     } catch (error) {
-      logger.error('Email service connection failed:', error);
+      logger.error('Noreply email service connection failed:', error);
+    }
+
+    try {
+      await this.infoTransporter.verify();
+      logger.info('Info email service connected successfully');
+    } catch (error) {
+      logger.error('Info email service connection failed:', error);
     }
   }
 
   /**
-   * Send email
+   * Send email with specified transporter
    */
-  async sendEmail(options: {
-    to: string;
-    subject: string;
-    html: string;
-    text?: string;
-  }): Promise<void> {
+  private async sendEmailWithTransporter(
+    transporter: nodemailer.Transporter,
+    options: {
+      to: string;
+      subject: string;
+      html: string;
+      text?: string;
+      from: string;
+      fromName: string;
+    }
+  ): Promise<void> {
     try {
       const mailOptions = {
-        from: `"${config.email.fromName}" <${config.email.from}>`,
+        from: `"${options.fromName}" <${options.from}>`,
         to: options.to,
         subject: options.subject,
         html: options.html,
         text: options.text || this.htmlToText(options.html),
       };
 
-      const info = await this.transporter.sendMail(mailOptions);
-      logger.info(`Email sent successfully to ${options.to}: ${info.messageId}`);
+      const info = await transporter.sendMail(mailOptions);
+      logger.info(
+        `Email sent successfully to ${options.to} from ${options.from}: ${info.messageId}`
+      );
     } catch (error) {
       logger.error(`Failed to send email to ${options.to}:`, error);
       throw error;
@@ -80,137 +110,238 @@ class EmailService {
 
   /**
    * Send email verification email
+   * Uses noreply@royalcompetitions.co.uk
    */
   async sendVerificationEmail(
     email: string,
     firstName: string,
     verificationToken: string
   ): Promise<void> {
-    const verificationUrl = `${config.frontendUrl}/verify-email?token=${verificationToken}`;
+    const html = emailTemplatesService.getVerificationEmail({
+      firstName,
+      verificationToken,
+    });
 
-    const html = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Verify Your Email - Royal Competitions</title>
-        </head>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f8f9fa; padding: 30px; border-radius: 10px;">
-            <div style="text-align: center; margin-bottom: 30px;">
-              <h1 style="color: #1a1a1a; margin: 0;">Royal Competitions</h1>
-            </div>
-            
-            <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-              <h2 style="color: #1a1a1a; margin-top: 0;">Welcome, ${firstName}!</h2>
-              
-              <p>Thank you for signing up with Royal Competitions. To complete your registration and start entering our exciting competitions, please verify your email address.</p>
-              
-              <div style="text-align: center; margin: 30px 0;">
-                <a href="${verificationUrl}" 
-                   style="display: inline-block; background-color: #1a1a1a; color: #ffffff; padding: 14px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
-                  Verify Email Address
-                </a>
-              </div>
-              
-              <p style="color: #666; font-size: 14px; margin-top: 30px;">
-                Or copy and paste this link into your browser:<br>
-                <a href="${verificationUrl}" style="color: #1a1a1a; word-break: break-all;">${verificationUrl}</a>
-              </p>
-              
-              <p style="color: #666; font-size: 14px; margin-top: 20px;">
-                This verification link will expire in 24 hours. If you didn't create an account with Royal Competitions, please ignore this email.
-              </p>
-            </div>
-            
-            <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; font-size: 12px;">
-              <p>© ${new Date().getFullYear()} Royal Competitions. All rights reserved.</p>
-              <p>
-                <a href="${config.frontendUrl}" style="color: #1a1a1a; text-decoration: none;">Visit our website</a> | 
-                <a href="${config.frontendUrl}/contact" style="color: #1a1a1a; text-decoration: none;">Contact Support</a>
-              </p>
-            </div>
-          </div>
-        </body>
-      </html>
-    `;
-
-    await this.sendEmail({
+    await this.sendEmailWithTransporter(this.noreplyTransporter, {
       to: email,
       subject: 'Verify Your Email Address - Royal Competitions',
       html,
+      from: config.email.noreply.email,
+      fromName: config.email.noreply.name,
     });
   }
 
   /**
    * Send password reset email
+   * Uses noreply@royalcompetitions.co.uk
    */
   async sendPasswordResetEmail(
     email: string,
     firstName: string,
     resetToken: string
   ): Promise<void> {
-    const resetUrl = `${config.frontendUrl}/reset-password?token=${resetToken}`;
+    const html = emailTemplatesService.getPasswordResetEmail({
+      firstName,
+      resetToken,
+    });
 
-    const html = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Reset Your Password - Royal Competitions</title>
-        </head>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f8f9fa; padding: 30px; border-radius: 10px;">
-            <div style="text-align: center; margin-bottom: 30px;">
-              <h1 style="color: #1a1a1a; margin: 0;">Royal Competitions</h1>
-            </div>
-            
-            <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-              <h2 style="color: #1a1a1a; margin-top: 0;">Password Reset Request</h2>
-              
-              <p>Hello ${firstName},</p>
-              
-              <p>We received a request to reset your password. Click the button below to create a new password:</p>
-              
-              <div style="text-align: center; margin: 30px 0;">
-                <a href="${resetUrl}" 
-                   style="display: inline-block; background-color: #1a1a1a; color: #ffffff; padding: 14px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
-                  Reset Password
-                </a>
-              </div>
-              
-              <p style="color: #666; font-size: 14px; margin-top: 30px;">
-                Or copy and paste this link into your browser:<br>
-                <a href="${resetUrl}" style="color: #1a1a1a; word-break: break-all;">${resetUrl}</a>
-              </p>
-              
-              <p style="color: #666; font-size: 14px; margin-top: 20px;">
-                This link will expire in 1 hour. If you didn't request a password reset, please ignore this email and your password will remain unchanged.
-              </p>
-            </div>
-            
-            <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; font-size: 12px;">
-              <p>© ${new Date().getFullYear()} Royal Competitions. All rights reserved.</p>
-              <p>
-                <a href="${config.frontendUrl}" style="color: #1a1a1a; text-decoration: none;">Visit our website</a> | 
-                <a href="${config.frontendUrl}/contact" style="color: #1a1a1a; text-decoration: none;">Contact Support</a>
-              </p>
-            </div>
-          </div>
-        </body>
-      </html>
-    `;
-
-    await this.sendEmail({
+    await this.sendEmailWithTransporter(this.noreplyTransporter, {
       to: email,
       subject: 'Reset Your Password - Royal Competitions',
       html,
+      from: config.email.noreply.email,
+      fromName: config.email.noreply.name,
+    });
+  }
+
+  /**
+   * Send order confirmation email
+   * Uses info@royalcompetitions.co.uk
+   */
+  async sendOrderConfirmationEmail(options: {
+    email: string;
+    firstName: string;
+    lastName?: string;
+    orderNumber: string;
+    competitionTitle: string;
+    ticketNumbers: number[];
+    amountGBP: string;
+    orderId: string;
+  }): Promise<void> {
+    const html = emailTemplatesService.getOrderConfirmationEmail({
+      firstName: options.firstName,
+      lastName: options.lastName,
+      orderNumber: options.orderNumber,
+      competitionTitle: options.competitionTitle,
+      ticketNumbers: options.ticketNumbers,
+      amountGBP: options.amountGBP,
+      orderId: options.orderId,
+    });
+
+    await this.sendEmailWithTransporter(this.infoTransporter, {
+      to: options.email,
+      subject: `Order Confirmation - ${options.orderNumber} - Royal Competitions`,
+      html,
+      from: config.email.info.email,
+      fromName: config.email.info.name,
+    });
+  }
+
+  /**
+   * Send payment success email
+   * Uses info@royalcompetitions.co.uk
+   */
+  async sendPaymentSuccessEmail(options: {
+    email: string;
+    firstName: string;
+    lastName?: string;
+    orderNumber: string;
+    competitionTitle: string;
+    ticketNumbers: number[];
+    amountGBP: string;
+    orderId: string;
+  }): Promise<void> {
+    const html = emailTemplatesService.getPaymentSuccessEmail({
+      firstName: options.firstName,
+      lastName: options.lastName,
+      orderNumber: options.orderNumber,
+      competitionTitle: options.competitionTitle,
+      ticketNumbers: options.ticketNumbers,
+      amountGBP: options.amountGBP,
+      orderId: options.orderId,
+    });
+
+    await this.sendEmailWithTransporter(this.infoTransporter, {
+      to: options.email,
+      subject: `Payment Successful - ${options.orderNumber} - Royal Competitions`,
+      html,
+      from: config.email.info.email,
+      fromName: config.email.info.name,
+    });
+  }
+
+  /**
+   * Send winner notification email
+   * Uses info@royalcompetitions.co.uk
+   */
+  async sendWinnerNotificationEmail(options: {
+    email: string;
+    firstName: string;
+    lastName?: string;
+    competitionTitle: string;
+    ticketNumber: number;
+    prize: string;
+    drawDate: string;
+    claimUrl: string;
+  }): Promise<void> {
+    const html = emailTemplatesService.getWinnerNotificationEmail({
+      firstName: options.firstName,
+      lastName: options.lastName,
+      competitionTitle: options.competitionTitle,
+      ticketNumber: options.ticketNumber,
+      prize: options.prize,
+      drawDate: options.drawDate,
+      claimUrl: options.claimUrl,
+    });
+
+    await this.sendEmailWithTransporter(this.infoTransporter, {
+      to: options.email,
+      subject: `🎉 You're a Winner! - ${options.competitionTitle} - Royal Competitions`,
+      html,
+      from: config.email.info.email,
+      fromName: config.email.info.name,
+    });
+  }
+
+  /**
+   * Send draw completed email
+   * Uses info@royalcompetitions.co.uk
+   */
+  async sendDrawCompletedEmail(options: {
+    email: string;
+    firstName: string;
+    lastName?: string;
+    competitionTitle: string;
+    drawDate: string;
+    winnerTicketNumber: number;
+    competitionUrl: string;
+  }): Promise<void> {
+    const html = emailTemplatesService.getDrawCompletedEmail({
+      firstName: options.firstName,
+      lastName: options.lastName,
+      competitionTitle: options.competitionTitle,
+      drawDate: options.drawDate,
+      winnerTicketNumber: options.winnerTicketNumber,
+      competitionUrl: options.competitionUrl,
+    });
+
+    await this.sendEmailWithTransporter(this.infoTransporter, {
+      to: options.email,
+      subject: `Draw Completed - ${options.competitionTitle} - Royal Competitions`,
+      html,
+      from: config.email.info.email,
+      fromName: config.email.info.name,
+    });
+  }
+
+  /**
+   * Send order refunded email
+   * Uses info@royalcompetitions.co.uk
+   */
+  async sendOrderRefundedEmail(options: {
+    email: string;
+    firstName: string;
+    lastName?: string;
+    orderNumber: string;
+    competitionTitle: string;
+    amountGBP: string;
+    refundReason?: string;
+  }): Promise<void> {
+    const html = emailTemplatesService.getOrderRefundedEmail({
+      firstName: options.firstName,
+      lastName: options.lastName,
+      orderNumber: options.orderNumber,
+      competitionTitle: options.competitionTitle,
+      amountGBP: options.amountGBP,
+      refundReason: options.refundReason,
+    });
+
+    await this.sendEmailWithTransporter(this.infoTransporter, {
+      to: options.email,
+      subject: `Refund Processed - ${options.orderNumber} - Royal Competitions`,
+      html,
+      from: config.email.info.email,
+      fromName: config.email.info.name,
+    });
+  }
+
+  /**
+   * Send competition closed email
+   * Uses info@royalcompetitions.co.uk
+   */
+  async sendCompetitionClosedEmail(options: {
+    email: string;
+    firstName: string;
+    lastName?: string;
+    competitionTitle: string;
+    competitionUrl: string;
+  }): Promise<void> {
+    const html = emailTemplatesService.getCompetitionClosedEmail({
+      firstName: options.firstName,
+      lastName: options.lastName,
+      competitionTitle: options.competitionTitle,
+      competitionUrl: options.competitionUrl,
+    });
+
+    await this.sendEmailWithTransporter(this.infoTransporter, {
+      to: options.email,
+      subject: `Competition Closed - ${options.competitionTitle} - Royal Competitions`,
+      html,
+      from: config.email.info.email,
+      fromName: config.email.info.name,
     });
   }
 }
 
 const emailService = new EmailService();
 export default emailService;
-
