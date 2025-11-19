@@ -51,7 +51,7 @@ const categorySchema = new Schema<ICategory>(
 );
 
 // Indexes
-categorySchema.index({ slug: 1 });
+// slug already has unique: true which creates an index automatically
 categorySchema.index({ isActive: 1 });
 categorySchema.index({ isUserCreated: 1 });
 categorySchema.index({ usageCount: -1 });

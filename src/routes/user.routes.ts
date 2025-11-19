@@ -8,6 +8,7 @@ import {
   resetUserPasswordByAdmin,
   toggleUserStatus,
   updateUser,
+  getMyProfile,
   getUserProfileWithStats,
   getMyTickets,
   getMyOrdersGrouped,
@@ -29,18 +30,18 @@ import {
 
 const router = Router();
 
-router.use(protect);
+// User profile routes (protected, not admin-only)
+router.get('/me', protect, getMyProfile);
+router.get('/me/profile', protect, getUserProfileWithStats);
+router.get('/me/tickets', protect, getMyTickets);
+router.get('/me/orders/grouped', protect, getMyOrdersGrouped);
+router.get('/me/entries', protect, getMyEntries);
+router.get('/me/orders', protect, getMyOrders);
+router.put('/me', protect, validate(updateMyProfileSchema), updateMyProfile);
+router.patch('/me', protect, validate(updateMyProfileSchema), updateMyProfile);
 
-// User profile and stats
-router.get('/me/profile', getUserProfileWithStats);
-router.get('/me/tickets', getMyTickets);
-router.get('/me/orders/grouped', getMyOrdersGrouped);
-router.get('/me/entries', getMyEntries);
-router.get('/me/orders', getMyOrders);
-router.put('/me', validate(updateMyProfileSchema), updateMyProfile);
-router.patch('/me', validate(updateMyProfileSchema), updateMyProfile);
-
-router.use(adminOnly);
+// Admin routes (protected + admin-only)
+router.use(protect, adminOnly);
 router.post('/', validate(createAdminUserSchema), createUserByAdmin);
 router.get('/', getUsers);
 router.get('/:userId/orders', getUserOrdersForAdmin);

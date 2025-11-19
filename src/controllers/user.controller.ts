@@ -353,6 +353,37 @@ export const toggleUserStatus = async (
 };
 
 /**
+ * Get current user's profile
+ * GET /api/v1/users/me
+ */
+export const getMyProfile = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    if (!req.user) {
+      throw new ApiError('Not authorized', 401);
+    }
+
+    const user = await User.findById(req.user._id).select('-password');
+
+    if (!user) {
+      throw new ApiError('User not found', 404);
+    }
+
+    res.json(
+      ApiResponse.success(
+        { user: sanitizeUser(user) },
+        'Profile retrieved successfully'
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Get user profile with statistics
  * GET /api/v1/users/me/profile
  */

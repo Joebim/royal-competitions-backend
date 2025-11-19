@@ -333,7 +333,7 @@ class EmailTemplatesService {
     }
   ): string {
     const firstName = options.firstName || 'Valued Customer';
-    const orderUrl = `${config.frontendUrl}/orders/${options.orderId}`;
+    const orderUrl = 'https://www.royalcompetitions.co.uk/profile/orders';
 
     const content = `
       <h1 class="content-title">Order Confirmation</h1>
@@ -390,8 +390,8 @@ class EmailTemplatesService {
     }
   ): string {
     const firstName = options.firstName || 'Valued Customer';
-    const ticketsUrl = `${config.frontendUrl}/tickets`;
-    const orderUrl = `${config.frontendUrl}/orders/${options.orderId}`;
+    const ticketsUrl = 'https://www.royalcompetitions.co.uk/my-tickets';
+    const orderUrl = 'https://www.royalcompetitions.co.uk/profile/orders';
 
     const ticketListItems = options.ticketNumbers
       .map(
@@ -538,6 +538,7 @@ class EmailTemplatesService {
     }
   ): string {
     const firstName = options.firstName || 'Valued Customer';
+    const drawsUrl = 'https://www.royalcompetitions.co.uk/draws';
 
     const content = `
       <h1 class="content-title">Draw Completed</h1>
@@ -575,8 +576,8 @@ class EmailTemplatesService {
           we have many more exciting competitions coming up!
         </div>
       </div>
-      <div style="text-align: center;">
-        <a href="${options.competitionUrl}" class="button">View Competition Results</a>
+      <div style="text-align: center;"></div>
+        <a href="${drawsUrl}" class="button">View Competition Results</a>
       </div>
     `;
 
@@ -651,6 +652,7 @@ class EmailTemplatesService {
     }
   ): string {
     const firstName = options.firstName || 'Valued Customer';
+    const drawsUrl = 'https://www.royalcompetitions.co.uk/draws';
 
     const content = `
       <h1 class="content-title">Competition Closed</h1>
@@ -669,7 +671,7 @@ class EmailTemplatesService {
         </div>
       </div>
       <div style="text-align: center;">
-        <a href="${config.frontendUrl}/competitions" class="button">Browse Competitions</a>
+        <a href="${drawsUrl}" class="button">View Draws</a>
       </div>
     `;
 
