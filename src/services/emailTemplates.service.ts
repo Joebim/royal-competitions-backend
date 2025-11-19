@@ -251,7 +251,7 @@ class EmailTemplatesService {
   getVerificationEmail(
     options: EmailTemplateOptions & { verificationToken: string }
   ): string {
-    const verificationUrl = `${config.frontendUrl}/verify-email?token=${options.verificationToken}`;
+    const verificationUrl = `${config.frontendUrl}/auth/verify-email?token=${options.verificationToken}`;
     const firstName = options.firstName || 'Valued Customer';
 
     const content = `
