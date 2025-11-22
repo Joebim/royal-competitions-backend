@@ -521,6 +521,15 @@ class EmailTemplatesService {
         This is an official notification from Royal Competitions. 
         Please keep this email for your records.
       </p>
+      <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e3b03e; text-align: center; font-size: 12px; color: #7e5936;">
+        <p style="margin: 5px 0;">
+          <strong>Royal Competitions</strong><br>
+          Official Winner Notification
+        </p>
+        <p style="margin: 5px 0; font-size: 11px;">
+          If you have any questions, please contact our support team.
+        </p>
+      </div>
     `;
 
     return this.getBaseTemplate(content, "You're a Winner!");

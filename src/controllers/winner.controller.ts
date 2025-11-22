@@ -103,7 +103,10 @@ export const getWinner = async (
   try {
     const winner = await Winner.findById(req.params.id)
       .populate('competitionId', 'title prize images prizeValue')
-      .populate('drawId', 'drawTime drawMethod seed algorithm snapshotTicketCount')
+      .populate(
+        'drawId',
+        'drawTime drawMethod seed algorithm snapshotTicketCount'
+      )
       .populate('userId', 'firstName lastName email')
       .populate('ticketId', 'ticketNumber')
       .lean();
@@ -243,19 +246,22 @@ export const getAllWinnersForAdmin = async (
       const searchFilters: any[] = [
         { claimCode: { $regex: searchTerm, $options: 'i' } },
       ];
-      
+
       // Only add ticket number filter if it's a valid number
       if (!isNaN(Number(searchTerm))) {
         searchFilters.push({ ticketNumber: Number(searchTerm) });
       }
-      
+
       filters.$or = searchFilters;
     }
 
     const [winners, total] = await Promise.all([
       Winner.find(filters)
         .populate('competitionId', 'title prize prizeValue images')
-        .populate('drawId', 'drawTime drawMethod seed algorithm snapshotTicketCount')
+        .populate(
+          'drawId',
+          'drawTime drawMethod seed algorithm snapshotTicketCount'
+        )
         .populate('userId', 'firstName lastName email')
         .populate('ticketId', 'ticketNumber')
         .sort({ createdAt: -1 })
@@ -289,7 +295,10 @@ export const getWinnerByIdForAdmin = async (
   try {
     const winner = await Winner.findById(req.params.id)
       .populate('competitionId', 'title prize images prizeValue')
-      .populate('drawId', 'drawTime drawMethod seed algorithm snapshotTicketCount')
+      .populate(
+        'drawId',
+        'drawTime drawMethod seed algorithm snapshotTicketCount'
+      )
       .populate('userId', 'firstName lastName email')
       .populate('ticketId', 'ticketNumber')
       .lean();
@@ -298,12 +307,7 @@ export const getWinnerByIdForAdmin = async (
       throw new ApiError('Winner not found', 404);
     }
 
-    res.json(
-      ApiResponse.success(
-        { winner },
-        'Winner retrieved successfully'
-      )
-    );
+    res.json(ApiResponse.success({ winner }, 'Winner retrieved successfully'));
   } catch (error) {
     next(error);
   }
@@ -369,7 +373,8 @@ export const updateWinnerForAdmin = async (
         winner.testimonial = {
           text: testimonial.text || winner.testimonial?.text || '',
           rating: testimonial.rating || winner.testimonial?.rating,
-          approved: testimonial.approved ?? winner.testimonial?.approved ?? false,
+          approved:
+            testimonial.approved ?? winner.testimonial?.approved ?? false,
         };
       }
     }
@@ -379,7 +384,10 @@ export const updateWinnerForAdmin = async (
     // Get updated winner with populated fields
     const updatedWinner = await Winner.findById(winnerId)
       .populate('competitionId', 'title prize images prizeValue')
-      .populate('drawId', 'drawTime drawMethod seed algorithm snapshotTicketCount')
+      .populate(
+        'drawId',
+        'drawTime drawMethod seed algorithm snapshotTicketCount'
+      )
       .populate('userId', 'firstName lastName email')
       .populate('ticketId', 'ticketNumber')
       .lean();
@@ -388,6 +396,75 @@ export const updateWinnerForAdmin = async (
       ApiResponse.success(
         { winner: updatedWinner },
         'Winner updated successfully'
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Claim prize (public endpoint with claim code verification)
+ * POST /api/v1/winners/:id/claim
+ */
+export const claimPrize = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const winnerId = req.params.id;
+    const { claimCode } = req.body;
+
+    if (!claimCode) {
+      throw new ApiError('Claim code is required', 400);
+    }
+
+    // Find winner
+    const winner = await Winner.findById(winnerId);
+    if (!winner) {
+      throw new ApiError('Winner not found', 404);
+    }
+
+    // Verify claim code (case-insensitive, trimmed)
+    const providedCode = String(claimCode).trim().toUpperCase();
+    const winnerCode = String(winner.claimCode).trim().toUpperCase();
+
+    if (providedCode !== winnerCode) {
+      throw new ApiError('Invalid claim code', 400);
+    }
+
+    // Check if already claimed
+    if (winner.claimed) {
+      throw new ApiError('Prize has already been claimed', 400);
+    }
+
+    // Update claimed status
+    winner.claimed = true;
+    winner.claimedAt = new Date();
+    await winner.save();
+
+    // Get updated winner with populated fields
+    const updatedWinner = await Winner.findById(winnerId)
+      .populate('competitionId', 'title prize images prizeValue')
+      .populate('userId', 'firstName lastName email')
+      .populate('ticketId', 'ticketNumber')
+      .lean();
+
+    res.json(
+      ApiResponse.success(
+        {
+          winner: {
+            id: updatedWinner?._id,
+            competitionId: updatedWinner?.competitionId,
+            ticketNumber: updatedWinner?.ticketNumber,
+            prize: updatedWinner?.prize,
+            prizeValue: updatedWinner?.prizeValue,
+            claimed: updatedWinner?.claimed,
+            claimedAt: updatedWinner?.claimedAt,
+          },
+        },
+        'Prize claimed successfully'
       )
     );
   } catch (error) {
@@ -414,14 +491,8 @@ export const deleteWinnerForAdmin = async (
 
     await Winner.findByIdAndDelete(winnerId);
 
-    res.json(
-      ApiResponse.success(
-        null,
-        'Winner deleted successfully'
-      )
-    );
+    res.json(ApiResponse.success(null, 'Winner deleted successfully'));
   } catch (error) {
     next(error);
   }
 };
-

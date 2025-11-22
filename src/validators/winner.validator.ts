@@ -19,3 +19,13 @@ export const updateWinnerSchema = Joi.object({
     .allow(null)
     .optional(),
 });
+
+export const claimPrizeSchema = Joi.object({
+  claimCode: Joi.string()
+    .pattern(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/)
+    .required()
+    .messages({
+      'string.pattern.base': 'Claim code must be in format ABCD-1234',
+      'any.required': 'Claim code is required',
+    }),
+});

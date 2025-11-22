@@ -72,46 +72,46 @@ class EmailService {
       text?: string;
       from: string;
       fromName: string;
+      replyTo?: string;
     }
   ): Promise<void> {
     try {
-      const mailOptions = {
+      // Extract domain from from email for List-Unsubscribe
+      const fromDomain = options.from.split('@')[1] || 'royalcompetitions.co.uk';
+      const unsubscribeUrl = `https://${fromDomain}/unsubscribe?email=${encodeURIComponent(options.to)}`;
+
+      const mailOptions: nodemailer.SendMailOptions = {
         from: `"${options.fromName}" <${options.from}>`,
         to: options.to,
         subject: options.subject,
         html: options.html,
         text: options.text || this.htmlToText(options.html),
-        // Add headers to help with deliverability
+        replyTo: options.replyTo || options.from,
+        // Anti-spam headers
         headers: {
-          'X-Priority': '1',
-          'X-MSMail-Priority': 'High',
+          'X-Mailer': 'Royal Competitions Email Service',
+          'X-Priority': '1', // High priority for winner notifications
           'Importance': 'high',
+          'Precedence': 'bulk',
+          'List-Unsubscribe': `<${unsubscribeUrl}>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+          'X-Auto-Response-Suppress': 'All',
+          'Auto-Submitted': 'auto-generated',
+          // SPF/DKIM/DMARC - these should be configured at domain level
+          // But we can help by ensuring proper formatting
+          'Message-ID': `<${Date.now()}-${Math.random().toString(36)}@${fromDomain}>`,
         },
+        // Additional options for better deliverability
+        priority: 'high' as const,
+        date: new Date(),
       };
 
-      logger.info(`Attempting to send email via ${options.from} to ${options.to} with subject: ${options.subject}`);
-      
       const info = await transporter.sendMail(mailOptions);
-      
       logger.info(
-        `Email sent successfully to ${options.to} from ${options.from}: ${info.messageId}`
+        `Email sent successfully to ${options.to} from ${options.from}: ${info?.messageId || 'N/A'}`
       );
-      logger.info(`Email response: ${JSON.stringify({
-        messageId: info.messageId,
-        response: info.response,
-        accepted: info.accepted,
-        rejected: info.rejected,
-        pending: info.pending,
-      })}`);
-    } catch (error: any) {
-      logger.error(`Failed to send email to ${options.to} from ${options.from}:`, {
-        message: error.message,
-        code: error.code,
-        command: error.command,
-        response: error.response,
-        responseCode: error.responseCode,
-        stack: error.stack,
-      });
+    } catch (error) {
+      logger.error(`Failed to send email to ${options.to}:`, error);
       throw error;
     }
   }
@@ -245,7 +245,7 @@ class EmailService {
 
   /**
    * Send winner notification email
-   * Uses info@royalcompetitions.co.uk (with fallback to noreply if needed)
+   * Uses info@royalcompetitions.co.uk
    */
   async sendWinnerNotificationEmail(options: {
     email: string;
@@ -267,42 +267,14 @@ class EmailService {
       claimUrl: options.claimUrl,
     });
 
-    logger.info(`Preparing winner notification email for ${options.email}`);
-    logger.info(`Using info transporter: ${config.email.info.email} (${config.email.info.user})`);
-
-    // Try sending with info transporter first, fallback to noreply if it fails
-    try {
-      await this.sendEmailWithTransporter(this.infoTransporter, {
-        to: options.email,
-        subject: `You're a Winner! - ${options.competitionTitle} - Royal Competitions`,
-        html,
-        from: config.email.info.email,
-        fromName: config.email.info.name,
-      });
-      logger.info(`Winner notification email sent successfully via info transporter to ${options.email}`);
-    } catch (error: any) {
-      logger.warn(`Failed to send winner email via info transporter (${config.email.info.email}), trying noreply as fallback:`, error.message);
-      logger.warn(`Error details:`, {
-        code: error.code,
-        command: error.command,
-        response: error.response,
-      });
-      
-      // Fallback to noreply transporter if info fails
-      try {
-        await this.sendEmailWithTransporter(this.noreplyTransporter, {
-          to: options.email,
-          subject: `You're a Winner! - ${options.competitionTitle} - Royal Competitions`,
-          html,
-          from: config.email.noreply.email,
-          fromName: config.email.noreply.name,
-        });
-        logger.info(`Winner email sent successfully via noreply fallback (${config.email.noreply.email}) to ${options.email}`);
-      } catch (fallbackError: any) {
-        logger.error(`Both info and noreply transporters failed for winner email to ${options.email}:`, fallbackError);
-        throw fallbackError;
-      }
-    }
+    await this.sendEmailWithTransporter(this.infoTransporter, {
+      to: options.email,
+      subject: `🎉 You're a Winner! - ${options.competitionTitle} - Royal Competitions`,
+      html,
+      from: config.email.info.email,
+      fromName: config.email.info.name,
+      replyTo: config.email.info.email,
+    });
   }
 
   /**
