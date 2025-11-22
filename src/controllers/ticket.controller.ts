@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import { Competition, Ticket, TicketStatus, Event, EventType } from '../models';
+import { CompetitionStatus } from '../models/Competition.model';
 import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
 import { getPagination } from '../utils/pagination';
@@ -132,11 +133,20 @@ export const holdTickets = async (
       throw new ApiError('Competition not found', 404);
     }
 
-    // Check if competition has ended
+    // Check if competition has ended (endDate passed) - CHECK THIS FIRST
+    const now = new Date();
+    if (competition.endDate && competition.endDate <= now) {
+      throw new ApiError(
+        'This competition has ended and is no longer accepting entries',
+        400
+      );
+    }
+
+    // Check if competition status indicates it's ended
     if (
-      competition.status === 'ended' ||
-      competition.status === 'drawn' ||
-      competition.status === 'cancelled'
+      competition.status === CompetitionStatus.ENDED ||
+      competition.status === CompetitionStatus.DRAWN ||
+      competition.status === CompetitionStatus.CANCELLED
     ) {
       throw new ApiError(
         'This competition is no longer accepting entries',
@@ -144,26 +154,17 @@ export const holdTickets = async (
       );
     }
 
-    // Check if competition has ended (endDate passed)
-    if (competition.endDate && competition.endDate <= new Date()) {
-      throw new ApiError(
-        'This competition has ended and is no longer accepting entries',
-        400
-      );
-    }
-
-    // Check if competition is live and accepting entries
-    if (competition.status !== 'live') {
-      throw new ApiError('Competition is not currently accepting entries', 400);
-    }
-
     // Check if competition is active
     if (!competition.isActive) {
       throw new ApiError('Competition is not active', 400);
     }
 
+    // Check if competition is live and accepting entries
+    if (competition.status !== CompetitionStatus.LIVE) {
+      throw new ApiError('Competition is not currently accepting entries', 400);
+    }
+
     // Check remaining tickets (excluding expired reservations)
-    const now = new Date();
     const reservedCount = await Ticket.countDocuments({
       competitionId,
       status: TicketStatus.RESERVED,
@@ -182,8 +183,8 @@ export const holdTickets = async (
 
     const totalAvailable =
       availableTickets === Infinity
-        ? Infinity
-        : availableTickets - reservedCount;
+      ? Infinity 
+      : availableTickets - reservedCount;
 
     if (totalAvailable !== Infinity && qty > totalAvailable) {
       throw new ApiError(`Only ${totalAvailable} ticket(s) available`, 400);
@@ -199,16 +200,17 @@ export const holdTickets = async (
     if (userId) {
       await Ticket.updateMany(
         {
-          competitionId,
+        competitionId,
           ticketNumber: { $in: reservedTickets },
-          status: TicketStatus.RESERVED,
+        status: TicketStatus.RESERVED,
         },
         { $set: { userId } }
-      );
+        );
     }
 
     // Calculate cost
-    const costPence = competition.ticketPricePence * qty;
+    const ticketPrice = competition.ticketPrice || ((competition as any).ticketPricePence ? (competition as any).ticketPricePence / 100 : 0);
+    const cost = Number((ticketPrice * qty).toFixed(2));
     const reservedUntil = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
     // Create event log (non-critical, so we don't fail if this errors)
@@ -238,12 +240,12 @@ export const holdTickets = async (
             .substr(2, 9)}`,
           reservedTickets,
           reservedUntil: reservedUntil.toISOString(),
-          costPence,
-          costGBP: (costPence / 100).toFixed(2),
+          cost,
+          costGBP: cost.toFixed(2),
           competition: {
             id: competition._id,
             title: competition.title,
-            ticketPricePence: competition.ticketPricePence,
+            ticketPrice: competition.ticketPrice || ((competition as any).ticketPricePence ? (competition as any).ticketPricePence / 100 : 0),
             remainingTickets:
               availableTickets === Infinity ? null : availableTickets - qty,
           },
@@ -356,8 +358,8 @@ export const getUserTickets = async (
     const requestedUserId = req.params.id
       ? String(req.params.id)
       : currentUserId;
-    const userId = req.params.id
-      ? new mongoose.Types.ObjectId(req.params.id)
+    const userId = req.params.id 
+      ? new mongoose.Types.ObjectId(req.params.id) 
       : (req.user._id as mongoose.Types.ObjectId);
     const competitionId = req.query.competitionId as string | undefined;
 

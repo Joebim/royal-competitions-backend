@@ -101,15 +101,20 @@ const buildCompetitionFilters = (
   const priceMin = parseNumberParam(query.priceMin);
   const priceMax = parseNumberParam(query.priceMax);
   if (priceMin !== undefined || priceMax !== undefined) {
-    filters.ticketPricePence = {};
-    // Convert to pence if provided in pounds (assume if < 1000 it's in pence)
+    filters.$or = [
+      { ticketPrice: {} },
+      { ticketPricePence: {} }, // Support legacy field
+    ];
+    // Convert to decimal if provided as pence (>= 1000), otherwise use as decimal
     if (priceMin !== undefined) {
-      filters.ticketPricePence.$gte =
-        priceMin < 1000 ? priceMin : priceMin * 100;
+      const minValue = priceMin >= 1000 ? priceMin / 100 : priceMin;
+      filters.$or[0].ticketPrice.$gte = minValue;
+      filters.$or[1].ticketPricePence.$gte = priceMin >= 1000 ? priceMin : priceMin * 100;
     }
     if (priceMax !== undefined) {
-      filters.ticketPricePence.$lte =
-        priceMax < 1000 ? priceMax : priceMax * 100;
+      const maxValue = priceMax >= 1000 ? priceMax / 100 : priceMax;
+      filters.$or[0].ticketPrice.$lte = maxValue;
+      filters.$or[1].ticketPricePence.$lte = priceMax >= 1000 ? priceMax : priceMax * 100;
     }
   }
 
@@ -234,16 +239,16 @@ const parseCompetitionPayload = (body: any) => {
   const originalPrice = parseNumberParam(body.originalPrice);
   if (originalPrice !== undefined) payload.originalPrice = originalPrice;
 
-  // Ticket price in pence
-  const ticketPricePence = parseNumberParam(
-    body.ticketPricePence ?? body.ticketPrice ?? body.price ?? body.ticket_price
+  // Ticket price in decimal
+  const ticketPrice = parseNumberParam(
+    body.ticketPrice ?? body.ticketPricePence ?? body.price ?? body.ticket_price
   );
-  if (ticketPricePence !== undefined) {
-    // Convert to pence if provided in pounds
-    payload.ticketPricePence =
-      ticketPricePence < 100
-        ? Math.round(ticketPricePence * 100)
-        : ticketPricePence;
+  if (ticketPrice !== undefined) {
+    // If provided as pence (>= 100), convert to decimal; otherwise use as decimal
+    payload.ticketPrice =
+      ticketPrice >= 100
+        ? Number((ticketPrice / 100).toFixed(2))
+        : Number(ticketPrice.toFixed(2));
   }
 
   // Ticket limit (null = unlimited)
@@ -627,7 +632,7 @@ export const createCompetition = async (
       throw new ApiError('Missing required fields', 400);
     }
 
-    if (!payload.ticketPricePence) {
+    if (!payload.ticketPrice && !(payload as any).ticketPricePence) {
       throw new ApiError('Ticket price is required', 400);
     }
 
@@ -818,7 +823,7 @@ export const duplicateCompetition = async (
       cashAlternative: originalCompetition.cashAlternative,
       cashAlternativeDetails: originalCompetition.cashAlternativeDetails,
       originalPrice: originalCompetition.originalPrice,
-      ticketPricePence: originalCompetition.ticketPricePence,
+      ticketPrice: originalCompetition.ticketPrice || ((originalCompetition as any).ticketPricePence ? (originalCompetition as any).ticketPricePence / 100 : 0),
       ticketLimit: originalCompetition.ticketLimit,
       ticketsSold: 0, // Reset tickets sold
       status: CompetitionStatus.DRAFT, // Always start as draft

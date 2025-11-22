@@ -38,6 +38,7 @@ const paymentSchema = new Schema<IPayment>(
       type: Number,
       required: true,
       min: 0,
+      set: (v: number) => Math.round(v * 100) / 100, // Round to 2 decimal places
     },
     currency: {
       type: String,
@@ -56,7 +57,10 @@ const paymentSchema = new Schema<IPayment>(
     },
     paymentMethod: String,
     refundId: String,
-    refundAmount: Number,
+    refundAmount: {
+      type: Number,
+      set: (v: number) => v ? Math.round(v * 100) / 100 : v, // Round to 2 decimal places
+    },
     metadata: Schema.Types.Mixed,
   },
   {

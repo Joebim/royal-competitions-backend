@@ -48,7 +48,7 @@ const formatCartResponse = async (cart: any) => {
               title: competition.title,
               slug: competition.slug,
               image: competition.images?.[0]?.url || null,
-              ticketPrice: competition.ticketPricePence ? (competition.ticketPricePence / 100).toFixed(2) : '0.00',
+              ticketPrice: (competition.ticketPrice || ((competition as any).ticketPricePence ? (competition as any).ticketPricePence / 100 : 0)).toFixed(2),
               maxTickets: competition.ticketLimit,
               soldTickets: competition.ticketsSold,
               status: competition.status,
@@ -69,6 +69,28 @@ const recalculateItemSubtotal = (item: any) => {
 };
 
 const ensureCompetitionAvailability = (competition: any) => {
+  const now = new Date();
+  
+  // Check if competition has ended (endDate passed) - CHECK THIS FIRST
+  if (competition.endDate && competition.endDate <= now) {
+    throw new ApiError(
+      'This competition has ended and is no longer accepting entries',
+      400
+    );
+  }
+
+  // Check if competition status indicates it's ended
+  if (
+    competition.status === CompetitionStatus.ENDED ||
+    competition.status === CompetitionStatus.DRAWN ||
+    competition.status === CompetitionStatus.CANCELLED
+  ) {
+    throw new ApiError(
+      'This competition is no longer accepting entries',
+      400
+    );
+  }
+
   if (!competition.isActive) {
     throw new ApiError('Competition is no longer active', 400);
   }
@@ -156,8 +178,8 @@ export const addOrUpdateCartItem = async (
       );
     }
 
-    // Convert ticket price from pence to pounds
-    const ticketPriceGBP = competition.ticketPricePence / 100;
+    // Get ticket price in decimal
+    const ticketPriceGBP = competition.ticketPrice || ((competition as any).ticketPricePence ? (competition as any).ticketPricePence / 100 : 0);
 
     let cart = await Cart.findOne({ userId: req.user._id });
     if (!cart) {
@@ -255,8 +277,8 @@ export const updateCartItem = async (
       );
     }
 
-    // Convert ticket price from pence to pounds
-    const ticketPriceGBP = competition.ticketPricePence / 100;
+    // Get ticket price in decimal
+    const ticketPriceGBP = competition.ticketPrice || ((competition as any).ticketPricePence ? (competition as any).ticketPricePence / 100 : 0);
 
     item.quantity = parsedQuantity;
     item.unitPrice = ticketPriceGBP;

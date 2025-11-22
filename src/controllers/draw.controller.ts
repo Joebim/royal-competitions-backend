@@ -129,17 +129,17 @@ export const runDraw = async (
         if (user && user.email) {
           // Send Klaviyo notification
           try {
-            await klaviyoService.trackWinnerNotification(
-              user.email,
-              user.phone,
-              String(competition._id),
-              competition.title,
-              competition.prize,
-              ticket.ticketNumber,
-              winner[0].claimCode,
-              user.firstName,
-              user.lastName
-            );
+          await klaviyoService.trackWinnerNotification(
+            user.email,
+            user.phone,
+            String(competition._id),
+            competition.title,
+            competition.prize,
+            ticket.ticketNumber,
+            winner[0].claimCode,
+            user.firstName,
+            user.lastName
+          );
           } catch (error: any) {
             logger.error('Error sending Klaviyo winner notification:', error);
           }
@@ -629,7 +629,7 @@ export const getAllDraws = async (
           'category',
           'slug',
           'status',
-          'ticketPricePence',
+          'ticketPrice',
           'ticketLimit',
           'ticketsSold',
           'drawAt',

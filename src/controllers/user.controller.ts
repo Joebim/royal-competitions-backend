@@ -429,7 +429,7 @@ export const getUserProfileWithStats = async (
         {
           $group: {
             _id: null,
-            total: { $sum: '$amountPence' },
+            total: { $sum: { $ifNull: ['$amount', { $divide: ['$amountPence', 100] }] } },
           },
         },
       ]),
@@ -447,8 +447,7 @@ export const getUserProfileWithStats = async (
       }),
     ]);
 
-    const totalSpentPence = totalSpentResult[0]?.total || 0;
-    const totalSpent = totalSpentPence / 100;
+    const totalSpent = totalSpentResult[0]?.total || 0;
 
     res.json(
       ApiResponse.success(
@@ -585,8 +584,8 @@ export const getMyOrdersGrouped = async (
         orderNumber: order.orderNumber,
         competitionId: order.competitionId?._id || order.competitionId,
         competition: order.competitionId,
-        amountPence: order.amountPence,
-        amountGBP: (order.amountPence / 100).toFixed(2),
+        amount: order.amount || (order.amountPence ? order.amountPence / 100 : 0),
+        amountGBP: (order.amount || (order.amountPence ? order.amountPence / 100 : 0)).toFixed(2),
         quantity: order.quantity,
         status: order.status,
         paymentStatus: order.paymentStatus,

@@ -59,8 +59,9 @@ export const createPayPalOrder = async (
     }
 
     // Create PayPal order
+    const orderAmount = order ? (order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0)) : amount;
     const paypalOrder = await paypalService.createOrder({
-      amount: order ? order.amountPence : amount,
+      amount: orderAmount,
       currency: order?.currency || 'GBP',
       orderId: orderId || undefined,
       userId: order?.userId
@@ -84,7 +85,7 @@ export const createPayPalOrder = async (
       await Payment.create({
         orderId: order._id,
         userId: order.userId || req.user?._id,
-        amount: order.amountPence,
+        amount: orderAmount,
         paymentIntentId: paypalOrder.id,
         status: PaymentStatus.PENDING,
       });
@@ -433,7 +434,7 @@ export async function handlePaymentSuccess(
         userId: order.userId,
         competitionId: order.competitionId,
         payload: {
-          amountPence: order.amountPence,
+          amount: order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
           ticketNumbers: order.ticketsReserved,
         },
       },
@@ -474,7 +475,7 @@ export async function handlePaymentSuccess(
           String(competitionForKlaviyo._id),
           competitionForKlaviyo.title,
           order.ticketsReserved,
-          order.amountPence,
+          order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
           user?.firstName || order.billingDetails.firstName,
           user?.lastName || order.billingDetails.lastName
         );
@@ -493,7 +494,7 @@ export async function handlePaymentSuccess(
           orderNumber: order.orderNumber,
           competitionTitle: competitionForKlaviyo.title,
           ticketNumbers: order.ticketsReserved,
-          amountGBP: (order.amountPence / 100).toFixed(2),
+          amountGBP: (order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0)).toFixed(2),
           orderId: String(order._id),
         });
         logger.info(`Payment success email sent to ${order.billingDetails.email}`);
@@ -645,7 +646,7 @@ async function handlePaymentFailure(capture: any) {
         userId: order.userId,
         competitionId: order.competitionId,
         payload: {
-          amountPence: order.amountPence,
+          amount: order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
           ticketNumbers: order.ticketsReserved,
         },
       },
@@ -688,7 +689,7 @@ async function handleRefund(refund: any) {
     await Payment.findByIdAndUpdate(payment._id, {
       status: PaymentStatus.REFUNDED,
       refundId: refund.id,
-      refundAmount: Math.round(parseFloat(refund.amount.value) * 100), // Convert to pence
+      refundAmount: parseFloat(refund.amount.value), // Amount in decimal
     });
 
     // Update order
@@ -727,8 +728,8 @@ async function handleRefund(refund: any) {
         userId: order.userId,
         competitionId: order.competitionId,
         payload: {
-          amountPence: order.amountPence,
-          refundAmount: Math.round(parseFloat(refund.amount.value) * 100),
+          amount: order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
+          refundAmount: parseFloat(refund.amount.value),
           ticketNumbers: order.ticketsReserved,
         },
       },
@@ -744,7 +745,7 @@ async function handleRefund(refund: any) {
           lastName: user?.lastName || order.billingDetails.lastName,
           orderNumber: order.orderNumber,
           competitionTitle: competition.title,
-          amountGBP: (order.amountPence / 100).toFixed(2),
+          amountGBP: (order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0)).toFixed(2),
           refundReason: refund.reason || undefined,
         });
         logger.info(`Refund email sent to ${order.billingDetails.email}`);

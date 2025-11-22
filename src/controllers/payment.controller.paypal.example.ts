@@ -66,7 +66,7 @@ export const createPayPalOrder = async (
 
     // Create PayPal order
     const paypalOrder = await paypalService.createOrder({
-      amount: order ? order.amountPence : amount,
+      amount: order ? (order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0)) : amount,
       currency: order?.currency || 'GBP',
       orderId: orderId || undefined,
       userId: order?.userId
@@ -90,7 +90,7 @@ export const createPayPalOrder = async (
       await Payment.create({
         orderId: order._id,
         userId: order.userId || req.user?._id,
-        amount: order.amountPence,
+        amount: order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
         paymentIntentId: paypalOrder.id,
         status: PaymentStatus.PENDING,
       });
@@ -349,7 +349,7 @@ export async function handlePaymentSuccess(capture: any) {
         userId: order.userId,
         competitionId: order.competitionId,
         payload: {
-          amountPence: order.amountPence,
+          amount: order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
           ticketNumbers: order.ticketsReserved,
         },
       },
@@ -390,7 +390,7 @@ export async function handlePaymentSuccess(capture: any) {
           String(competitionForKlaviyo._id),
           competitionForKlaviyo.title,
           order.ticketsReserved,
-          order.amountPence,
+          order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
           user?.firstName || order.billingDetails.firstName,
           user?.lastName || order.billingDetails.lastName
         );
@@ -440,7 +440,7 @@ async function handlePaymentFailure(capture: any) {
         userId: order.userId,
         competitionId: order.competitionId,
         payload: {
-          amountPence: order.amountPence,
+          amount: order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
           ticketNumbers: order.ticketsReserved,
         },
       },
@@ -519,7 +519,7 @@ async function handleRefund(refund: any) {
         userId: order.userId,
         competitionId: order.competitionId,
         payload: {
-          amountPence: order.amountPence,
+          amount: order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
           refundAmount: Math.round(parseFloat(refund.amount.value) * 100),
           ticketNumbers: order.ticketsReserved,
         },

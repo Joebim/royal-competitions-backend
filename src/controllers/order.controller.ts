@@ -9,6 +9,7 @@ import {
   User,
 } from '../models';
 import { OrderPaymentStatus, OrderStatus } from '../models/Order.model';
+import { CompetitionStatus } from '../models/Competition.model';
 import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
 import { getPagination } from '../utils/pagination';
@@ -26,8 +27,8 @@ const formatOrderResponse = (order: any) => {
     competitionId: doc.competitionId,
     userId: doc.userId,
     orderNumber: doc.orderNumber,
-    amountPence: doc.amountPence,
-    amountGBP: (doc.amountPence / 100).toFixed(2),
+    amount: doc.amount || doc.amountPence, // Support legacy amountPence
+    amountGBP: (doc.amount || (doc.amountPence ? doc.amountPence / 100 : 0)).toFixed(2),
     currency: doc.currency,
     quantity: doc.quantity,
     status: doc.status,
@@ -274,11 +275,20 @@ export const createOrder = async (
       throw new ApiError('Competition not found', 404);
     }
 
-    // Check if competition is available for purchase
+    // Check if competition has ended (endDate passed) - CHECK THIS FIRST
+    const now = new Date();
+    if (competition.endDate && competition.endDate <= now) {
+      throw new ApiError(
+        'This competition has ended and is no longer accepting entries',
+        400
+      );
+    }
+
+    // Check if competition status indicates it's ended
     if (
-      competition.status === 'ended' ||
-      competition.status === 'drawn' ||
-      competition.status === 'cancelled'
+      competition.status === CompetitionStatus.ENDED ||
+      competition.status === CompetitionStatus.DRAWN ||
+      competition.status === CompetitionStatus.CANCELLED
     ) {
       throw new ApiError(
         'This competition is no longer accepting entries',
@@ -286,16 +296,13 @@ export const createOrder = async (
       );
     }
 
-    // Check if competition has ended (endDate passed)
-    if (competition.endDate && competition.endDate <= new Date()) {
-      throw new ApiError(
-        'This competition has ended and is no longer accepting entries',
-        400
-      );
+    // Check if competition is active
+    if (!competition.isActive) {
+      throw new ApiError('Competition is not active', 400);
     }
 
-    // Check if competition is active and live
-    if (!competition.isActive || competition.status !== 'live') {
+    // Check if competition is live and accepting entries
+    if (competition.status !== CompetitionStatus.LIVE) {
       throw new ApiError(
         'This competition is not currently accepting entries',
         400
@@ -315,7 +322,8 @@ export const createOrder = async (
     }
 
     // Calculate amount
-    const amountPence = competition.ticketPricePence * qty;
+    const ticketPrice = competition.ticketPrice || ((competition as any).ticketPricePence ? (competition as any).ticketPricePence / 100 : 0);
+    const amount = Number((ticketPrice * qty).toFixed(2));
 
     // Generate unique order number
     let orderNumber = generateOrderNumber();
@@ -337,7 +345,7 @@ export const createOrder = async (
       userId: req.user?._id || undefined, // Set userId if user is logged in
       competitionId,
       orderNumber,
-      amountPence,
+      amount,
       currency: 'GBP',
       quantity: qty,
       status: OrderStatus.PENDING,
@@ -351,11 +359,11 @@ export const createOrder = async (
     // Create PayPal order
     const orderId = String(order._id);
     const paypalOrder = await paypalService.createOrder({
-      amount: amountPence, // Amount in pence
+      amount: amount, // Amount in decimal
       currency: 'GBP',
-      orderId: orderId,
+        orderId: orderId,
       userId: req.user?._id?.toString() || 'guest',
-      competitionId: competitionId,
+        competitionId: competitionId,
       returnUrl: `${config.frontendUrl}/payment/success?orderId=${orderId}`,
       cancelUrl: `${config.frontendUrl}/payment/cancel?orderId=${orderId}`,
     });
@@ -372,7 +380,7 @@ export const createOrder = async (
       userId: req.user?._id,
       competitionId,
       payload: {
-        amountPence,
+        amount,
         quantity: qty,
         ticketsReserved,
       },
@@ -390,7 +398,7 @@ export const createOrder = async (
           orderNumber: order.orderNumber,
           competitionTitle: competition.title,
           ticketNumbers: ticketsReserved,
-          amountGBP: (amountPence / 100).toFixed(2),
+          amountGBP: amount.toFixed(2),
           orderId: String(order._id),
         });
         logger.info(`Order confirmation email sent to ${billingDetails.email}`);

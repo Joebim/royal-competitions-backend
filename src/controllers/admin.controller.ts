@@ -75,9 +75,8 @@ export const getDashboardSummary = async (
         .lean(),
     ]);
 
-    // Convert revenue from pence to pounds
-    const revenueTotalPence = revenueAggregate[0]?.total || 0;
-    const revenueTotal = revenueTotalPence / 100;
+    // Revenue is already in decimal
+    const revenueTotal = revenueAggregate[0]?.total || 0;
 
     const recentActivity = [
       ...recentDraws.map((draw: any) => ({
@@ -99,8 +98,8 @@ export const getDashboardSummary = async (
           orderId: order._id,
           competitionId: order.competitionId?._id || order.competitionId,
           competitionTitle: order.competitionId?.title || 'Unknown',
-          amountPence: order.amountPence,
-          amountGBP: (order.amountPence / 100).toFixed(2),
+          amount: order.amount || (order.amountPence ? order.amountPence / 100 : 0),
+          amountGBP: (order.amount || (order.amountPence ? order.amountPence / 100 : 0)).toFixed(2),
           currency: order.currency,
           quantity: order.quantity,
         },

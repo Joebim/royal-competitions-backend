@@ -19,7 +19,7 @@ export interface IOrder extends Document {
   userId?: mongoose.Types.ObjectId; // Optional for guest checkout
   competitionId: mongoose.Types.ObjectId;
   orderNumber: string; // Unique order number
-  amountPence: number; // Total amount in pence
+  amount: number; // Total amount in decimal (e.g., 3.99)
   currency: string;
   quantity: number; // Number of tickets
   status: OrderStatus;
@@ -73,10 +73,11 @@ const orderSchema = new Schema<IOrder>(
       required: true,
       unique: true,
     },
-    amountPence: {
+    amount: {
       type: Number,
       required: true,
       min: 0,
+      set: (v: number) => Math.round(v * 100) / 100, // Round to 2 decimal places
     },
     currency: {
       type: String,

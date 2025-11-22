@@ -29,7 +29,7 @@ export interface ICompetition extends Document {
     publicId: string;
     thumbnail?: string;
   }>;
-  ticketPricePence: number; // Price in pence (e.g., 100 = £1.00)
+  ticketPrice: number; // Price in decimal (e.g., 1.00 = £1.00)
   ticketLimit: number | null; // null = unlimited
   ticketsSold: number;
   status: CompetitionStatus;
@@ -163,10 +163,11 @@ const competitionSchema = new Schema<ICompetition>(
       type: String,
       trim: true,
     },
-    ticketPricePence: {
+    ticketPrice: {
       type: Number,
       required: [true, 'Ticket price is required'],
-      min: [1, 'Ticket price must be at least 1 pence'],
+      min: [0.01, 'Ticket price must be at least £0.01'],
+      set: (v: number) => Math.round(v * 100) / 100, // Round to 2 decimal places
     },
     ticketLimit: {
       type: Number,

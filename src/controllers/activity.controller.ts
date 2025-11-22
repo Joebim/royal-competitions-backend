@@ -69,7 +69,8 @@ const generateActivityDescription = (event: any): string => {
     case EventType.ORDER_CREATED:
       return `Order created for ${competitionTitle} by ${userName}`;
     case EventType.ORDER_PAID:
-      return `Order paid for ${competitionTitle} by ${userName} - £${((event.payload?.amountPence || 0) / 100).toFixed(2)}`;
+      const amount = event.payload?.amount || (event.payload?.amountPence ? event.payload.amountPence / 100 : 0);
+      return `Order paid for ${competitionTitle} by ${userName} - £${amount.toFixed(2)}`;
     case EventType.ORDER_FAILED:
       return `Order payment failed for ${competitionTitle} by ${userName}`;
     case EventType.ORDER_REFUNDED:

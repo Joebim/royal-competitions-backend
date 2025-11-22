@@ -53,9 +53,7 @@ const formatCompetitionCard = (competition: any) => ({
   title: competition.title,
   slug: competition.slug,
   image: competition.images?.[0]?.url || null,
-  ticketPrice: competition.ticketPricePence
-    ? (competition.ticketPricePence / 100).toFixed(2)
-    : '0.00',
+  ticketPrice: (competition.ticketPrice || (competition.ticketPricePence ? competition.ticketPricePence / 100 : 0) || 0).toFixed(2),
   cashAlternative: competition.cashAlternative || null,
   maxTickets: competition.ticketLimit,
   soldTickets: competition.ticketsSold,

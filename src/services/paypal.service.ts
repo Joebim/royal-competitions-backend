@@ -4,7 +4,7 @@ import logger from '../utils/logger';
 import { ApiError } from '../utils/apiError';
 
 interface CreateOrderData {
-  amount: number; // Amount in pence
+  amount: number; // Amount in decimal (e.g., 3.99)
   currency?: string;
   orderId?: string;
   userId?: string;
@@ -40,8 +40,8 @@ class PayPalService {
     try {
       const client = paypalClient();
       
-      // Convert pence to currency amount (e.g., 365 pence = 3.65 GBP)
-      const amountValue = (data.amount / 100).toFixed(2);
+      // Format amount to 2 decimal places (e.g., 3.99 = 3.99 GBP)
+      const amountValue = data.amount.toFixed(2);
 
       const request = new checkoutNodeJssdk.orders.OrdersCreateRequest();
       request.prefer('return=representation');
@@ -128,7 +128,7 @@ class PayPalService {
       if (amount) {
         request.requestBody({
           amount: {
-            value: (amount / 100).toFixed(2),
+            value: amount.toFixed(2),
             currency_code: currency.toUpperCase(),
           },
         });

@@ -228,8 +228,9 @@ export const createCheckoutFromCart = async (
         }
       }
 
-      // Calculate amount in pence
-      const amountPence = competition.ticketPricePence * cartItem.quantity;
+      // Calculate amount in decimal
+      const ticketPrice = competition.ticketPrice || ((competition as any).ticketPricePence ? (competition as any).ticketPricePence / 100 : 0);
+      const amount = Number((ticketPrice * cartItem.quantity).toFixed(2));
 
       // Generate unique order number
       let orderNumber = generateOrderNumber();
@@ -250,7 +251,7 @@ export const createCheckoutFromCart = async (
         userId: req.user._id,
         competitionId: competition._id,
         orderNumber,
-        amountPence,
+        amount,
         currency: 'GBP',
         quantity: cartItem.quantity,
         status: OrderStatus.PENDING,
@@ -263,7 +264,7 @@ export const createCheckoutFromCart = async (
 
       // Create PayPal order
       const paypalOrder = await paypalService.createOrder({
-        amount: amountPence,
+        amount: amount,
         currency: 'GBP',
         orderId: String(order._id),
         userId: String(req.user._id),
@@ -280,7 +281,7 @@ export const createCheckoutFromCart = async (
       await Payment.create({
         orderId: order._id,
         userId: req.user._id,
-        amount: amountPence,
+        amount: amount,
         paymentIntentId: paypalOrder.id,
         status: PaymentStatus.PENDING,
       });
@@ -296,7 +297,7 @@ export const createCheckoutFromCart = async (
             orderNumber: order.orderNumber,
             competitionTitle: competition.title,
             ticketNumbers: ticketsReserved,
-            amountGBP: (amountPence / 100).toFixed(2),
+            amountGBP: amount.toFixed(2),
             orderId: String(order._id),
           });
           logger.info(`Order confirmation email sent to ${billingDetails.email}`);
@@ -311,8 +312,8 @@ export const createCheckoutFromCart = async (
         competitionId: competition._id,
         competitionTitle: competition.title,
         quantity: cartItem.quantity,
-        amountPence,
-        amountGBP: (amountPence / 100).toFixed(2),
+        amount,
+        amountGBP: amount.toFixed(2),
         paypalOrderId: paypalOrder.id,
         orderID: paypalOrder.id, // For PayPal Buttons
       });
@@ -427,8 +428,9 @@ export const createCheckoutPaymentIntent = async (
       paypalOrder = { id: order.paypalOrderId };
     } else {
       // Create new PayPal order
+      const orderAmount = order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0);
       paypalOrder = await paypalService.createOrder({
-        amount: order.amountPence,
+        amount: orderAmount,
         currency: 'GBP',
         orderId: String(order._id),
         userId: order.userId ? String(order.userId) : 'guest',
@@ -446,7 +448,7 @@ export const createCheckoutPaymentIntent = async (
         {
           orderId: order._id,
           userId: order.userId,
-          amount: order.amountPence,
+          amount: order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
           paymentIntentId: paypalOrder.id,
           status: PaymentStatus.PENDING,
         },
@@ -460,15 +462,15 @@ export const createCheckoutPaymentIntent = async (
           order: {
             id: order._id,
             competitionId: order.competitionId,
-            amountPence: order.amountPence,
-            amountGBP: (order.amountPence / 100).toFixed(2),
+            amount: order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
+            amountGBP: (order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0)).toFixed(2),
             quantity: order.quantity,
             ticketsReserved: order.ticketsReserved,
           },
           payment: {
             paypalOrderId: paypalOrder.id,
             orderID: paypalOrder.id, // For PayPal Buttons
-            amount: order.amountPence,
+            amount: order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
             currency: 'GBP',
           },
         },
@@ -541,8 +543,8 @@ export const confirmCheckoutOrder = async (
             id: order._id,
             competitionId: order.competitionId,
             competitionTitle: competition?.title,
-            amountPence: order.amountPence,
-            amountGBP: (order.amountPence / 100).toFixed(2),
+            amount: order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
+            amountGBP: (order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0)).toFixed(2),
             quantity: order.quantity,
             status: order.status,
             paymentStatus: order.paymentStatus,
