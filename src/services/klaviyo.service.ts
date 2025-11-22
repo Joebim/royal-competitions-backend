@@ -25,8 +25,9 @@ class KlaviyoService {
   private retryDelay = 1000; // 1 second
 
   constructor() {
-    this.privateApiKey = process.env.KLAVIYO_PRIVATE_API_KEY || config.klaviyo.privateKey || '';
-    
+    this.privateApiKey =
+      process.env.KLAVIYO_PRIVATE_API_KEY || config.klaviyo.privateKey || '';
+
     if (!this.privateApiKey) {
       logger.warn('Klaviyo private API key not configured');
     }
@@ -51,8 +52,8 @@ class KlaviyoService {
 
     const url = `${this.baseUrl}${endpoint}`;
     const headers = {
-      'Authorization': `Klaviyo-API-Key ${this.privateApiKey}`,
-      'revision': this.revision,
+      Authorization: `Klaviyo-API-Key ${this.privateApiKey}`,
+      revision: this.revision,
       'Content-Type': 'application/json',
     };
 
@@ -67,10 +68,14 @@ class KlaviyoService {
         // Handle rate limiting (429)
         if (response.status === 429) {
           const retryAfter = response.headers.get('Retry-After');
-          const delay = retryAfter ? parseInt(retryAfter) * 1000 : retryDelay * Math.pow(2, attempt);
-          
+          const delay = retryAfter
+            ? parseInt(retryAfter) * 1000
+            : retryDelay * Math.pow(2, attempt);
+
           if (attempt < maxRetries) {
-            logger.warn(`Klaviyo rate limited, retrying after ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
+            logger.warn(
+              `Klaviyo rate limited, retrying after ${delay}ms (attempt ${attempt + 1}/${maxRetries})`
+            );
             await this.sleep(delay);
             continue;
           }
@@ -80,7 +85,9 @@ class KlaviyoService {
         if (response.status >= 500 && response.status < 600) {
           if (attempt < maxRetries) {
             const delay = retryDelay * Math.pow(2, attempt);
-            logger.warn(`Klaviyo server error ${response.status}, retrying after ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
+            logger.warn(
+              `Klaviyo server error ${response.status}, retrying after ${delay}ms (attempt ${attempt + 1}/${maxRetries})`
+            );
             await this.sleep(delay);
             continue;
           }
@@ -91,7 +98,9 @@ class KlaviyoService {
           logger.error(`Klaviyo API error: ${response.status} ${errorText}`);
           // Don't throw for 4xx errors (except 429 which we retry)
           if (response.status === 429 || response.status >= 500) {
-            throw new Error(`Klaviyo API error: ${response.status} ${errorText}`);
+            throw new Error(
+              `Klaviyo API error: ${response.status} ${errorText}`
+            );
           }
           return null;
         }
@@ -111,13 +120,19 @@ class KlaviyoService {
         return null;
       } catch (error: any) {
         if (attempt === maxRetries) {
-          logger.error(`Klaviyo API request failed after ${maxRetries} retries:`, error.message || error);
+          logger.error(
+            `Klaviyo API request failed after ${maxRetries} retries:`,
+            error.message || error
+          );
           // Don't throw - we don't want to fail the main operation
           return null;
         }
-        
+
         const delay = retryDelay * Math.pow(2, attempt);
-        logger.warn(`Klaviyo request failed, retrying after ${delay}ms (attempt ${attempt + 1}/${maxRetries}):`, error.message);
+        logger.warn(
+          `Klaviyo request failed, retrying after ${delay}ms (attempt ${attempt + 1}/${maxRetries}):`,
+          error.message
+        );
         await this.sleep(delay);
       }
     }
@@ -126,7 +141,7 @@ class KlaviyoService {
   }
 
   private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
@@ -160,7 +175,10 @@ class KlaviyoService {
       await this.makeRequest('/profiles/', 'POST', profileData);
       logger.info(`Klaviyo profile identified/updated: ${user.email}`);
     } catch (error: any) {
-      logger.error('Error identifying/updating Klaviyo profile:', error.message || error);
+      logger.error(
+        'Error identifying/updating Klaviyo profile:',
+        error.message || error
+      );
       // Don't throw - we don't want to fail the main operation
     }
   }
@@ -184,7 +202,7 @@ class KlaviyoService {
     try {
       // Klaviyo automatically creates metrics when events are sent
       // We don't need to create metrics explicitly - just send the event
-      
+
       // Create the event payload
       const eventData = {
         data: {
@@ -218,9 +236,14 @@ class KlaviyoService {
       };
 
       await this.makeRequest('/events/', 'POST', eventData);
-      logger.info(`Klaviyo event tracked: ${eventName}${email ? ` for ${email}` : ''}`);
+      logger.info(
+        `Klaviyo event tracked: ${eventName}${email ? ` for ${email}` : ''}`
+      );
     } catch (error: any) {
-      logger.error(`Error tracking Klaviyo event ${eventName}:`, error.message || error);
+      logger.error(
+        `Error tracking Klaviyo event ${eventName}:`,
+        error.message || error
+      );
       // Don't throw - we don't want to fail the main operation
     }
   }
@@ -236,7 +259,10 @@ class KlaviyoService {
         return;
       }
 
-      const listId = process.env.KLAVIYO_LIST_ID_NEWSLETTER || config.klaviyo.listIdNewsletter || '';
+      const listId =
+        process.env.KLAVIYO_LIST_ID_NEWSLETTER ||
+        config.klaviyo.listIdNewsletter ||
+        '';
       if (!listId) {
         logger.warn('Klaviyo newsletter list ID not configured');
         return;
@@ -276,16 +302,23 @@ class KlaviyoService {
               data: {
                 type: 'list',
                 id: listId,
-      },
+              },
             },
           },
         },
       };
 
-      await this.makeRequest('/profile-subscription-bulk-create-jobs/', 'POST', subscriptionData);
+      await this.makeRequest(
+        '/profile-subscription-bulk-create-jobs/',
+        'POST',
+        subscriptionData
+      );
       logger.info(`Subscribed ${email} to Klaviyo email list ${listId}`);
     } catch (error: any) {
-      logger.error('Error subscribing to Klaviyo email list:', error.message || error);
+      logger.error(
+        'Error subscribing to Klaviyo email list:',
+        error.message || error
+      );
       // Don't throw - we don't want to fail the main operation
     }
   }
@@ -302,7 +335,8 @@ class KlaviyoService {
         return;
       }
 
-      const listId = process.env.KLAVIYO_LIST_ID_SMS || config.klaviyo.listIdSMS || '';
+      const listId =
+        process.env.KLAVIYO_LIST_ID_SMS || config.klaviyo.listIdSMS || '';
       if (!listId) {
         logger.warn('Klaviyo SMS list ID not configured');
         return;
@@ -346,14 +380,23 @@ class KlaviyoService {
                 id: listId,
               },
             },
-              },
+          },
         },
       };
 
-      await this.makeRequest('/profile-subscription-bulk-create-jobs/', 'POST', subscriptionData);
-      logger.info(`Subscribed ${phone}${email ? ` (${email})` : ''} to Klaviyo SMS list ${listId}`);
+      await this.makeRequest(
+        '/profile-subscription-bulk-create-jobs/',
+        'POST',
+        subscriptionData
+      );
+      logger.info(
+        `Subscribed ${phone}${email ? ` (${email})` : ''} to Klaviyo SMS list ${listId}`
+      );
     } catch (error: any) {
-      logger.error('Error subscribing to Klaviyo SMS list:', error.message || error);
+      logger.error(
+        'Error subscribing to Klaviyo SMS list:',
+        error.message || error
+      );
       // Don't throw - we don't want to fail the main operation
     }
   }
@@ -375,7 +418,9 @@ class KlaviyoService {
 
       const user = await User.findById(userId);
       if (!user || !user.email) {
-        logger.warn(`Cannot grant free entries: user ${userId} not found or has no email`);
+        logger.warn(
+          `Cannot grant free entries: user ${userId} not found or has no email`
+        );
         return;
       }
 
@@ -383,20 +428,20 @@ class KlaviyoService {
       // This is a placeholder - you'll need to add a freeEntries field to User model
       // or create a separate FreeEntry model
       // For now, we'll just track the event
-      logger.info(`Granting ${entries} free entries to user ${userId} (${user.email}) from source: ${source}`);
-
-      // Track the event
-      await this.trackEvent(
-        user.email,
-        'Granted Free Entries',
-        {
-          user_id: userId,
-          entries_granted: entries,
-          source,
-        }
+      logger.info(
+        `Granting ${entries} free entries to user ${userId} (${user.email}) from source: ${source}`
       );
 
-      logger.info(`Granted and tracked ${entries} free entries for user ${user.email}`);
+      // Track the event
+      await this.trackEvent(user.email, 'Granted Free Entries', {
+        user_id: userId,
+        entries_granted: entries,
+        source,
+      });
+
+      logger.info(
+        `Granted and tracked ${entries} free entries for user ${user.email}`
+      );
     } catch (error: any) {
       logger.error('Error granting free entries:', error.message || error);
       // Don't throw - we don't want to fail the main operation

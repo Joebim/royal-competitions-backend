@@ -964,12 +964,19 @@ export const runAutomaticDraw = async (
     }
 
     // Run draw (1 primary winner, 3 reserves)
+    logger.info(`Running draw for competition ${competitionId} with 4 winners (1 primary + 3 reserves)`);
     const drawResult = await drawService.runDraw({
       competitionId,
       numWinners: 4,
     });
 
     const { results, snapshot, seed } = drawResult;
+    logger.info(`Draw completed: found ${results.length} winner(s) for competition ${competitionId}`);
+    
+    if (results.length === 0) {
+      logger.warn(`No winners found for competition ${competitionId} - no tickets available or draw failed`);
+      return;
+    }
 
     // Create draw record
     const draw = await drawService.createDrawRecord(
@@ -987,6 +994,8 @@ export const runAutomaticDraw = async (
 
     // Create winners
     const winners = [];
+    logger.info(`Creating ${results.length} winner(s) for competition ${competitionId}`);
+    
     for (let i = 0; i < results.length; i++) {
       const result = results[i];
       const isPrimary = i === 0; // First is primary winner
@@ -1000,6 +1009,8 @@ export const runAutomaticDraw = async (
         logger.warn(`Ticket ${result.ticketId} not found, skipping`);
         continue;
       }
+
+      logger.info(`Processing winner ${i + 1}: ticket ${ticket.ticketNumber}, userId: ${ticket.userId}, isPrimary: ${isPrimary}`);
 
       // Mark ticket as winner
       ticket.status = TicketStatus.WINNER;
@@ -1033,8 +1044,16 @@ export const runAutomaticDraw = async (
 
       // Notify primary winner
       if (isPrimary && ticket.userId) {
+        logger.info(`Primary winner found: ticket ${ticket.ticketNumber}, userId: ${ticket.userId}`);
         const user = await User.findById(ticket.userId);
-        if (user && user.email) {
+        
+        if (!user) {
+          logger.warn(`User ${ticket.userId} not found for winner notification`);
+        } else if (!user.email) {
+          logger.warn(`User ${ticket.userId} has no email address for winner notification`);
+        } else {
+          logger.info(`Sending winner notification to ${user.email} for competition ${competitionId}`);
+          
           // Track "Won Competition" event in Klaviyo
           try {
             // Determine prize type
@@ -1078,6 +1097,8 @@ export const runAutomaticDraw = async (
           // Send email notification
           try {
             const claimUrl = `${config.frontendUrl}/winners/${winner[0]._id}/claim?code=${winner[0].claimCode}`;
+            logger.info(`Attempting to send email to ${user.email} with claim URL: ${claimUrl}`);
+            
             await emailService.sendWinnerNotificationEmail({
               email: user.email,
               firstName: user.firstName,
@@ -1088,9 +1109,15 @@ export const runAutomaticDraw = async (
               drawDate: draw.createdAt.toISOString(),
               claimUrl,
             });
-            logger.info(`Winner notification email sent to ${user.email}`);
+            logger.info(`✅ Winner notification email successfully sent to ${user.email}`);
           } catch (error: any) {
-            logger.error('Error sending winner notification email:', error);
+            logger.error(`❌ Error sending winner notification email to ${user.email}:`, error);
+            logger.error('Email error details:', {
+              message: error.message,
+              stack: error.stack,
+              email: user.email,
+              competitionId,
+            });
             // Don't fail the draw if email fails
           }
 
@@ -1102,6 +1129,8 @@ export const runAutomaticDraw = async (
             await winner[0].save();
           }
         }
+      } else {
+        logger.warn(`Skipping notification: isPrimary=${isPrimary}, hasUserId=${!!ticket.userId}`);
       }
 
       // Create event log
