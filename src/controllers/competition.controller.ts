@@ -101,20 +101,13 @@ const buildCompetitionFilters = (
   const priceMin = parseNumberParam(query.priceMin);
   const priceMax = parseNumberParam(query.priceMax);
   if (priceMin !== undefined || priceMax !== undefined) {
-    filters.$or = [
-      { ticketPrice: {} },
-      { ticketPricePence: {} }, // Support legacy field
-    ];
+    filters.ticketPrice = {};
     // Convert to decimal if provided as pence (>= 1000), otherwise use as decimal
     if (priceMin !== undefined) {
-      const minValue = priceMin >= 1000 ? priceMin / 100 : priceMin;
-      filters.$or[0].ticketPrice.$gte = minValue;
-      filters.$or[1].ticketPricePence.$gte = priceMin >= 1000 ? priceMin : priceMin * 100;
+      filters.ticketPrice.$gte = priceMin >= 1000 ? priceMin / 100 : priceMin;
     }
     if (priceMax !== undefined) {
-      const maxValue = priceMax >= 1000 ? priceMax / 100 : priceMax;
-      filters.$or[0].ticketPrice.$lte = maxValue;
-      filters.$or[1].ticketPricePence.$lte = priceMax >= 1000 ? priceMax : priceMax * 100;
+      filters.ticketPrice.$lte = priceMax >= 1000 ? priceMax / 100 : priceMax;
     }
   }
 
@@ -240,7 +233,7 @@ const parseCompetitionPayload = (body: any) => {
   if (originalPrice !== undefined) payload.originalPrice = originalPrice;
 
   // Ticket price in decimal
-  const ticketPriceInput = body.ticketPrice ?? body.ticketPricePence ?? body.price ?? body.ticket_price;
+  const ticketPriceInput = body.ticketPrice ?? body.price ?? body.ticket_price;
   if (ticketPriceInput !== undefined && ticketPriceInput !== null && ticketPriceInput !== '') {
     // Check if input is a string with decimal point (definitely decimal format)
     const isDecimalString = typeof ticketPriceInput === 'string' && ticketPriceInput.includes('.');
@@ -643,7 +636,7 @@ export const createCompetition = async (
       throw new ApiError('Missing required fields', 400);
     }
 
-    if (!payload.ticketPrice && !(payload as any).ticketPricePence) {
+    if (!payload.ticketPrice) {
       throw new ApiError('Ticket price is required', 400);
     }
 

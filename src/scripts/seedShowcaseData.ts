@@ -53,7 +53,7 @@ const competitionsSeed = [
     prize: 'Aston Martin DB11 V12 Coupe',
     prizeValue: 18500000, // £185,000 in pence
     cashAlternative: 16500000, // £165,000 in pence
-    ticketPricePence: 39500, // £395 in pence
+    ticketPrice: 395.00, // £395.00
     ticketLimit: 45000,
     ticketsSold: 28930,
     status: CompetitionStatus.LIVE,
@@ -105,7 +105,7 @@ const competitionsSeed = [
     prize: 'Lamborghini Huracán EVO Spyder',
     prizeValue: 22500000, // £225,000 in pence
     cashAlternative: 20000000, // £200,000 in pence
-    ticketPricePence: 42500, // £425 in pence
+    ticketPrice: 425.00, // £425.00
     ticketLimit: 52000,
     ticketsSold: 31210,
     status: CompetitionStatus.LIVE,
@@ -157,7 +157,7 @@ const competitionsSeed = [
     prize: 'Ferrari F8 Tributo',
     prizeValue: 23800000, // £238,000 in pence
     cashAlternative: 21000000, // £210,000 in pence
-    ticketPricePence: 44500, // £445 in pence
+    ticketPrice: 445.00, // £445.00
     ticketLimit: 55000,
     ticketsSold: 37220,
     status: CompetitionStatus.LIVE,
@@ -219,7 +219,7 @@ const competitionsSeed = [
     prize: 'Bentley Continental GT Speed',
     prizeValue: 21000000, // £210,000 in pence
     cashAlternative: 19000000, // £190,000 in pence
-    ticketPricePence: 36500, // £365 in pence
+    ticketPrice: 365.00, // £365.00
     ticketLimit: 43000,
     ticketsSold: 23350,
     status: CompetitionStatus.LIVE,
@@ -272,7 +272,7 @@ const competitionsSeed = [
     prize: 'Rolls-Royce Cullinan Black Badge',
     prizeValue: 32500000, // £325,000 in pence
     cashAlternative: 29500000, // £295,000 in pence
-    ticketPricePence: 48500, // £485 in pence
+    ticketPrice: 485.00, // £485.00
     ticketLimit: 60000,
     ticketsSold: 40890,
     status: CompetitionStatus.LIVE,
@@ -336,7 +336,7 @@ const competitionsSeed = [
     prize: 'Porsche 911 Turbo S Cabriolet',
     prizeValue: 19800000, // £198,000 in pence
     cashAlternative: 17500000, // £175,000 in pence
-    ticketPricePence: 35500, // £355 in pence
+    ticketPrice: 355.00, // £355.00
     ticketLimit: 42000,
     ticketsSold: 18760,
     status: CompetitionStatus.LIVE,
@@ -399,7 +399,7 @@ const competitionsSeed = [
     prize: 'McLaren 720S Performance Pack',
     prizeValue: 23500000, // £235,000 in pence
     cashAlternative: 21000000, // £210,000 in pence
-    ticketPricePence: 40500, // £405 in pence
+    ticketPrice: 405.00, // £405.00
     ticketLimit: 54000,
     ticketsSold: 27845,
     status: CompetitionStatus.DRAFT,
@@ -458,7 +458,7 @@ const competitionsSeed = [
     prize: 'Mercedes-AMG GT R Pro',
     prizeValue: 18000000, // £180,000 in pence
     cashAlternative: 16000000, // £160,000 in pence
-    ticketPricePence: 32500, // £325 in pence
+    ticketPrice: 325.00, // £325.00
     ticketLimit: 39000,
     ticketsSold: 14050,
     status: CompetitionStatus.LIVE,

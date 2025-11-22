@@ -40,7 +40,6 @@ export const createCompetitionSchema = Joi.object({
   cashAlternativeDetails: Joi.string().max(500),
   originalPrice: Joi.number().min(0),
   ticketPrice: Joi.number().min(0.01).precision(2).required(), // Price in decimal (e.g., 1.00 = £1.00)
-  ticketPricePence: Joi.number().min(0.01).precision(2).optional(), // Legacy support - will be converted to ticketPrice
   ticketLimit: Joi.number().min(10).max(100000).allow(null), // null = unlimited
   ticketsSold: Joi.number().min(0),
   category: Joi.string().trim().min(2).max(100).required().messages({

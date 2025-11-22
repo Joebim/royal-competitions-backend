@@ -16,7 +16,7 @@ const formatCartResponse = async (cart: any) => {
   const competitions = await Competition.find({
     _id: { $in: competitionIds },
   }).select(
-    'title slug images ticketPricePence ticketLimit ticketsSold status isActive drawAt category'
+    'title slug images ticketPrice ticketLimit ticketsSold status isActive drawAt category'
   );
 
   const competitionMap = new Map<string, any>(
