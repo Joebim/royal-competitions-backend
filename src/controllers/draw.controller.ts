@@ -133,11 +133,22 @@ export const runDraw = async (
             // Determine prize type
             let prizeType = 'other';
             const prizeLower = competition.prize.toLowerCase();
-            if (prizeLower.includes('cash') || prizeLower.includes('£') || prizeLower.includes('money')) {
+            if (
+              prizeLower.includes('cash') ||
+              prizeLower.includes('£') ||
+              prizeLower.includes('money')
+            ) {
               prizeType = 'cash';
-            } else if (prizeLower.includes('car') || prizeLower.includes('vehicle')) {
+            } else if (
+              prizeLower.includes('car') ||
+              prizeLower.includes('vehicle')
+            ) {
               prizeType = 'car';
-            } else if (prizeLower.includes('holiday') || prizeLower.includes('trip') || prizeLower.includes('vacation')) {
+            } else if (
+              prizeLower.includes('holiday') ||
+              prizeLower.includes('trip') ||
+              prizeLower.includes('vacation')
+            ) {
               prizeType = 'holiday';
             }
 
@@ -365,11 +376,22 @@ export const addManualWinner = async (
           // Determine prize type
           let prizeType = 'other';
           const prizeLower = competition.prize.toLowerCase();
-          if (prizeLower.includes('cash') || prizeLower.includes('£') || prizeLower.includes('money')) {
+          if (
+            prizeLower.includes('cash') ||
+            prizeLower.includes('£') ||
+            prizeLower.includes('money')
+          ) {
             prizeType = 'cash';
-          } else if (prizeLower.includes('car') || prizeLower.includes('vehicle')) {
+          } else if (
+            prizeLower.includes('car') ||
+            prizeLower.includes('vehicle')
+          ) {
             prizeType = 'car';
-          } else if (prizeLower.includes('holiday') || prizeLower.includes('trip') || prizeLower.includes('vacation')) {
+          } else if (
+            prizeLower.includes('holiday') ||
+            prizeLower.includes('trip') ||
+            prizeLower.includes('vacation')
+          ) {
             prizeType = 'holiday';
           }
 
@@ -866,9 +888,11 @@ export const runAutomaticDraw = async (
   competitionId: string
 ): Promise<void> => {
   // Check if we have a real session (transactions supported)
-  const useSession = async (callback: (session: mongoose.ClientSession) => Promise<void>) => {
+  const useSession = async (
+    callback: (session: mongoose.ClientSession) => Promise<void>
+  ) => {
     const hasTransactions = await supportsTransactions();
-    
+
     if (hasTransactions) {
       const session = await mongoose.startSession();
       session.startTransaction();
@@ -892,10 +916,10 @@ export const runAutomaticDraw = async (
     const isRealSession = session && 'startTransaction' in session;
 
     // Get competition
-    const competition = isRealSession 
+    const competition = isRealSession
       ? await Competition.findById(competitionId).session(session)
       : await Competition.findById(competitionId);
-    
+
     if (!competition) {
       logger.error(`Competition ${competitionId} not found for automatic draw`);
       return;
@@ -954,7 +978,7 @@ export const runAutomaticDraw = async (
       const ticket = isRealSession
         ? await Ticket.findById(result.ticketId).session(session)
         : await Ticket.findById(result.ticketId);
-      
+
       if (!ticket) {
         logger.warn(`Ticket ${result.ticketId} not found, skipping`);
         continue;
@@ -998,11 +1022,22 @@ export const runAutomaticDraw = async (
             // Determine prize type
             let prizeType = 'other';
             const prizeLower = competition.prize.toLowerCase();
-            if (prizeLower.includes('cash') || prizeLower.includes('£') || prizeLower.includes('money')) {
+            if (
+              prizeLower.includes('cash') ||
+              prizeLower.includes('£') ||
+              prizeLower.includes('money')
+            ) {
               prizeType = 'cash';
-            } else if (prizeLower.includes('car') || prizeLower.includes('vehicle')) {
+            } else if (
+              prizeLower.includes('car') ||
+              prizeLower.includes('vehicle')
+            ) {
               prizeType = 'car';
-            } else if (prizeLower.includes('holiday') || prizeLower.includes('trip') || prizeLower.includes('vacation')) {
+            } else if (
+              prizeLower.includes('holiday') ||
+              prizeLower.includes('trip') ||
+              prizeLower.includes('vacation')
+            ) {
               prizeType = 'holiday';
             }
 

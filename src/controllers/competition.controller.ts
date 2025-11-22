@@ -473,15 +473,24 @@ export const getCompetition = async (
   next: NextFunction
 ) => {
   try {
-    const includeInactive = req.user
+    const isAdmin = req.user
       ? [UserRole.ADMIN, UserRole.SUPER_ADMIN].includes(req.user.role)
       : false;
-    const competition = await Competition.findById(req.params.id).populate(
+    
+    // For admins, allow viewing inactive/deleted competitions
+    // For non-admins, only show active, non-deleted competitions
+    const query: any = { _id: req.params.id };
+    if (!isAdmin) {
+      query.isActive = true;
+      query.deletedAt = { $exists: false };
+    }
+
+    const competition = await Competition.findOne(query).populate(
       'createdBy',
       'firstName lastName email'
     );
 
-    if (!competition || (!includeInactive && !competition.isActive)) {
+    if (!competition) {
       throw new ApiError('Competition not found', 404);
     }
 
