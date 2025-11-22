@@ -1,5 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
-import { Entry, Competition, Order, Ticket, User, TicketStatus } from '../models';
+import {
+  Entry,
+  Competition,
+  Order,
+  Ticket,
+  User,
+  TicketStatus,
+} from '../models';
 import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
 import { getPagination } from '../utils/pagination';
@@ -10,7 +17,7 @@ import logger from '../utils/logger';
  * @desc    Start competition entry (track when user begins entry process)
  * @route   POST /api/v1/entries/start
  * @access  Private
- * 
+ *
  * This endpoint tracks "Started Competition Entry" event in Klaviyo.
  * Called when user views the competition question page or begins the entry process.
  */
@@ -68,16 +75,12 @@ export const startEntry = async (
 
     // Track "Started Competition Entry" event in Klaviyo
     try {
-      await klaviyoService.trackEvent(
-        user.email,
-        'Started Competition Entry',
-        {
-          competition_id: String(competitionId),
-          competition_name: competition.title,
-          order_id: orderId ? String(orderId) : undefined,
-          ticket_number: ticketNumber || undefined,
-        }
-      );
+      await klaviyoService.trackEvent(user.email, 'Started Competition Entry', {
+        competition_id: String(competitionId),
+        competition_name: competition.title,
+        order_id: orderId ? String(orderId) : undefined,
+        ticket_number: ticketNumber || undefined,
+      });
       logger.info(
         `Started Competition Entry event tracked for user ${user.email} - competition: ${competitionId}`
       );
@@ -93,7 +96,9 @@ export const startEntry = async (
           competitionName: competition.title,
           hasQuestion: !!competition.question,
           question: competition.question?.question,
-          answerOptions: competition.question?.answerOptions || competition.question?.options,
+          answerOptions:
+            competition.question?.answerOptions ||
+            competition.question?.options,
         },
         'Entry process started'
       )
@@ -107,7 +112,7 @@ export const startEntry = async (
  * @desc    Submit competition entry (create entry with answer)
  * @route   POST /api/v1/entries/submit
  * @access  Private
- * 
+ *
  * This endpoint creates an Entry record and tracks "Submitted Competition Entry" event in Klaviyo.
  */
 export const submitEntry = async (
@@ -177,7 +182,9 @@ export const submitEntry = async (
     let isCorrect = true; // Default to true if no question
     if (competition.question && competition.question.correctAnswer) {
       const submittedAnswer = answer.trim().toLowerCase();
-      const correctAnswer = competition.question.correctAnswer.trim().toLowerCase();
+      const correctAnswer = competition.question.correctAnswer
+        .trim()
+        .toLowerCase();
       isCorrect = submittedAnswer === correctAnswer;
     }
 
@@ -409,4 +416,3 @@ export const getCompetitionEntries = async (
     next(error);
   }
 };
-

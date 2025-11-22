@@ -1075,6 +1075,25 @@ export const runAutomaticDraw = async (
             logger.error('Error tracking Won Competition event:', error);
           }
 
+          // Send email notification
+          try {
+            const claimUrl = `${config.frontendUrl}/winners/${winner[0]._id}/claim?code=${winner[0].claimCode}`;
+            await emailService.sendWinnerNotificationEmail({
+              email: user.email,
+              firstName: user.firstName,
+              lastName: user.lastName,
+              competitionTitle: competition.title,
+              ticketNumber: ticket.ticketNumber,
+              prize: competition.prize,
+              drawDate: draw.createdAt.toISOString(),
+              claimUrl,
+            });
+            logger.info(`Winner notification email sent to ${user.email}`);
+          } catch (error: any) {
+            logger.error('Error sending winner notification email:', error);
+            // Don't fail the draw if email fails
+          }
+
           winner[0].notified = true;
           winner[0].notifiedAt = new Date();
           if (isRealSession) {

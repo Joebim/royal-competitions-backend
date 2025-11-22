@@ -182,26 +182,10 @@ class KlaviyoService {
     time?: string
   ): Promise<void> {
     try {
-      // First, ensure the metric exists (create if doesn't exist)
-      // Klaviyo automatically creates metrics on first use, but we'll try to create it explicitly
-      const metricData = {
-        data: {
-          type: 'metric',
-          attributes: {
-            name: eventName,
-          },
-        },
-      };
-
-      // Try to create metric (will fail if exists, but that's okay)
-      try {
-        await this.makeRequest('/metrics/', 'POST', metricData);
-      } catch (metricError) {
-        // Metric might already exist, that's fine
-        logger.debug(`Metric ${eventName} may already exist`);
-      }
-
-      // Now create the event
+      // Klaviyo automatically creates metrics when events are sent
+      // We don't need to create metrics explicitly - just send the event
+      
+      // Create the event payload
       const eventData = {
         data: {
           type: 'event',
@@ -213,8 +197,8 @@ class KlaviyoService {
                   name: eventName,
                 },
               },
-      },
-      properties: {
+            },
+            properties: {
               ...properties,
               ...(value !== undefined && { value }),
             },
