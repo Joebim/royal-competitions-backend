@@ -29,9 +29,9 @@ const formatCartResponse = async (cart: any) => {
     id: cart._id,
     currency: cart.currency,
     items: cart.items.map((item: any) => {
-      const competition = competitionMap.get(
-        item.competitionId.toString()
-      )?.toObject();
+      const competition = competitionMap
+        .get(item.competitionId.toString())
+        ?.toObject();
 
       return {
         id: item._id,
@@ -47,7 +47,12 @@ const formatCartResponse = async (cart: any) => {
               title: competition.title,
               slug: competition.slug,
               image: competition.images?.[0]?.url || null,
-              ticketPrice: (competition.ticketPrice || ((competition as any).ticketPricePence ? (competition as any).ticketPricePence / 100 : 0)).toFixed(2),
+              ticketPrice: (
+                competition.ticketPrice ||
+                ((competition as any).ticketPricePence
+                  ? (competition as any).ticketPricePence / 100
+                  : 0)
+              ).toFixed(2),
               maxTickets: competition.ticketLimit,
               soldTickets: competition.ticketsSold,
               status: competition.status,
@@ -69,7 +74,7 @@ const recalculateItemSubtotal = (item: any) => {
 
 const ensureCompetitionAvailability = (competition: any) => {
   const now = new Date();
-  
+
   // Check if competition has ended (endDate passed) - CHECK THIS FIRST
   if (competition.endDate && competition.endDate <= now) {
     throw new ApiError(
@@ -84,10 +89,7 @@ const ensureCompetitionAvailability = (competition: any) => {
     competition.status === CompetitionStatus.DRAWN ||
     competition.status === CompetitionStatus.CANCELLED
   ) {
-    throw new ApiError(
-      'This competition is no longer accepting entries',
-      400
-    );
+    throw new ApiError('This competition is no longer accepting entries', 400);
   }
 
   if (!competition.isActive) {
@@ -166,9 +168,10 @@ export const addOrUpdateCartItem = async (
     ensureCompetitionAvailability(competition);
 
     // Calculate available tickets
-    const availableTickets = competition.ticketLimit !== null
-      ? competition.ticketLimit - competition.ticketsSold
-      : Infinity;
+    const availableTickets =
+      competition.ticketLimit !== null
+        ? competition.ticketLimit - competition.ticketsSold
+        : Infinity;
 
     if (availableTickets !== Infinity && parsedQuantity > availableTickets) {
       throw new ApiError(
@@ -178,7 +181,11 @@ export const addOrUpdateCartItem = async (
     }
 
     // Get ticket price in decimal
-    const ticketPriceGBP = competition.ticketPrice || ((competition as any).ticketPricePence ? (competition as any).ticketPricePence / 100 : 0);
+    const ticketPriceGBP =
+      competition.ticketPrice ||
+      ((competition as any).ticketPricePence
+        ? (competition as any).ticketPricePence / 100
+        : 0);
 
     let cart = await Cart.findOne({ userId: req.user._id });
     if (!cart) {
@@ -201,20 +208,20 @@ export const addOrUpdateCartItem = async (
         competitionId: competition._id,
         quantity: parsedQuantity,
         unitPrice: ticketPriceGBP,
-        subtotal: Number(
-          (parsedQuantity * ticketPriceGBP).toFixed(2)
-        ),
+        subtotal: Number((parsedQuantity * ticketPriceGBP).toFixed(2)),
       } as any);
     }
 
     await cart.save();
 
-    res.status(201).json(
-      ApiResponse.success(
-        await formatCartResponse(cart),
-        'Cart updated successfully'
-      )
-    );
+    res
+      .status(201)
+      .json(
+        ApiResponse.success(
+          await formatCartResponse(cart),
+          'Cart updated successfully'
+        )
+      );
   } catch (error) {
     next(error);
   }
@@ -265,9 +272,10 @@ export const updateCartItem = async (
     ensureCompetitionAvailability(competition);
 
     // Calculate available tickets
-    const availableTickets = competition.ticketLimit !== null
-      ? competition.ticketLimit - competition.ticketsSold
-      : Infinity;
+    const availableTickets =
+      competition.ticketLimit !== null
+        ? competition.ticketLimit - competition.ticketsSold
+        : Infinity;
 
     if (availableTickets !== Infinity && parsedQuantity > availableTickets) {
       throw new ApiError(
@@ -277,7 +285,11 @@ export const updateCartItem = async (
     }
 
     // Get ticket price in decimal
-    const ticketPriceGBP = competition.ticketPrice || ((competition as any).ticketPricePence ? (competition as any).ticketPricePence / 100 : 0);
+    const ticketPriceGBP =
+      competition.ticketPrice ||
+      ((competition as any).ticketPricePence
+        ? (competition as any).ticketPricePence / 100
+        : 0);
 
     item.quantity = parsedQuantity;
     item.unitPrice = ticketPriceGBP;
@@ -353,5 +365,3 @@ export const clearCart = async (
     next(error);
   }
 };
-
-

@@ -23,6 +23,21 @@ import logger from '../utils/logger';
 import { supportsTransactions } from '../utils/mongoTransaction';
 
 /**
+ * Generate a unique claim code for winners
+ * Format: ABCD-1234
+ */
+const generateClaimCode = (): string => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const part1 = Array.from({ length: 4 }, () =>
+    chars.charAt(Math.floor(Math.random() * chars.length))
+  ).join('');
+  const part2 = Array.from({ length: 4 }, () =>
+    chars.charAt(Math.floor(Math.random() * chars.length))
+  ).join('');
+  return `${part1}-${part2}`;
+};
+
+/**
  * Run draw for a competition (admin-triggered)
  * POST /api/v1/admin/competitions/:id/run-draw
  */
@@ -117,6 +132,7 @@ export const runDraw = async (
             prizeValue: competition.prizeValue,
             notified: false,
             claimed: false,
+            claimCode: generateClaimCode(),
           },
         ],
         { session }
@@ -361,6 +377,7 @@ export const addManualWinner = async (
           prizeValue: competition.prizeValue,
           notified: false,
           claimed: false,
+          claimCode: generateClaimCode(),
           drawVideoUrl: evidenceUrl,
         },
       ],
@@ -1006,6 +1023,7 @@ export const runAutomaticDraw = async (
             prizeValue: competition.prizeValue,
             notified: false,
             claimed: false,
+            claimCode: generateClaimCode(),
           },
         ],
         winnerOptions
