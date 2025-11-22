@@ -44,9 +44,9 @@ export const createPayPalOrder = async (
     let order = null;
     if (orderId) {
       order = await Order.findById(orderId);
-    if (!order) {
-      throw new ApiError('Order not found', 404);
-    }
+      if (!order) {
+        throw new ApiError('Order not found', 404);
+      }
 
       // Check authorization if user is authenticated
       if (
@@ -54,12 +54,15 @@ export const createPayPalOrder = async (
         order.userId &&
         order.userId.toString() !== String(req.user._id)
       ) {
-      throw new ApiError('Not authorized', 403);
-    }
+        throw new ApiError('Not authorized', 403);
+      }
     }
 
     // Create PayPal order
-    const orderAmount = order ? (order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0)) : amount;
+    const orderAmount = order
+      ? order.amount ||
+        ((order as any).amountPence ? (order as any).amountPence / 100 : 0)
+      : amount;
     const paypalOrder = await paypalService.createOrder({
       amount: orderAmount,
       currency: order?.currency || 'GBP',
@@ -79,16 +82,45 @@ export const createPayPalOrder = async (
     // Update order with PayPal order ID if order exists
     if (order) {
       order.paypalOrderId = paypalOrder.id;
-    await order.save();
+      await order.save();
 
-    // Create payment record
-    await Payment.create({
-      orderId: order._id,
+      // Create payment record
+      await Payment.create({
+        orderId: order._id,
         userId: order.userId || req.user?._id,
         amount: orderAmount,
         paymentIntentId: paypalOrder.id,
-      status: PaymentStatus.PENDING,
-    });
+        status: PaymentStatus.PENDING,
+      });
+
+      // Track "Started Checkout" event in Klaviyo
+      try {
+        const competition = await Competition.findById(order.competitionId);
+        const email = order.billingDetails?.email;
+
+        if (email && competition) {
+          await klaviyoService.trackEvent(
+            email,
+            'Started Checkout',
+            {
+              competition_id: String(order.competitionId),
+              competition_name: competition.title,
+              order_id: String(order._id),
+              items: [
+                {
+                  competition_id: String(order.competitionId),
+                  competition_name: competition.title,
+                  quantity: order.quantity,
+                  ticket_numbers: order.ticketsReserved || [],
+                },
+              ],
+            },
+            orderAmount
+          );
+        }
+      } catch (error: any) {
+        logger.error('Error tracking Started Checkout event:', error);
+      }
     }
 
     // Return orderID for frontend PayPal Buttons
@@ -434,7 +466,9 @@ export async function handlePaymentSuccess(
         userId: order.userId,
         competitionId: order.competitionId,
         payload: {
-          amount: order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
+          amount:
+            order.amount ||
+            ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
           ticketNumbers: order.ticketsReserved,
         },
       },
@@ -466,21 +500,108 @@ export async function handlePaymentSuccess(
       order.competitionId
     );
 
-    // Send Klaviyo notification
-    if (competitionForKlaviyo && order.billingDetails?.email) {
+    const email = order.billingDetails?.email;
+    const orderAmount =
+      order.amount ||
+      ((order as any).amountPence ? (order as any).amountPence / 100 : 0);
+
+    // Track Klaviyo events for successful payment
+    if (competitionForKlaviyo && email) {
       try {
-        await klaviyoService.trackTicketPurchased(
-          order.billingDetails.email,
-          order.billingDetails.phone || user?.phone,
-          String(competitionForKlaviyo._id),
-          competitionForKlaviyo.title,
-          order.ticketsReserved,
-          order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
-          user?.firstName || order.billingDetails.firstName,
-          user?.lastName || order.billingDetails.lastName
+        // Track "Placed Order" event
+        await klaviyoService.trackEvent(
+          email,
+          'Placed Order',
+          {
+            competition_id: String(order.competitionId),
+            competition_name: competitionForKlaviyo.title,
+            order_id: String(order._id),
+            order_number: order.orderNumber,
+            items: [
+              {
+                competition_id: String(order.competitionId),
+                competition_name: competitionForKlaviyo.title,
+                quantity: order.quantity,
+                ticket_numbers: order.ticketsReserved || [],
+              },
+            ],
+          },
+          orderAmount
         );
+
+        // Track "Paid Competition Entry" event
+        await klaviyoService.trackEvent(
+          email,
+          'Paid Competition Entry',
+          {
+            competition_id: String(order.competitionId),
+            competition_name: competitionForKlaviyo.title,
+            order_id: String(order._id),
+            ticket_numbers: order.ticketsReserved || [],
+            quantity: order.quantity,
+          },
+          orderAmount
+        );
+
+        // Handle marketing opt-in subscriptions
+        if (order.marketingOptIn) {
+          // Subscribe to email list
+          await klaviyoService.subscribeToEmailList(email);
+
+          // Subscribe to SMS list if phone provided
+          const phone = order.billingDetails?.phone || user?.phone;
+          if (phone) {
+            await klaviyoService.subscribeToSMSList(phone, email);
+          }
+        }
+
+        // Handle referral reward: Grant 10 free entries to referrer on first paid entry
+        if (user && user.referredBy) {
+          try {
+            // Find the payment record for this order
+            const paymentRecord = await Payment.findOne({ orderId: order._id });
+
+            // Check if this is the user's first successful paid entry
+            const previousSuccessfulPayments = await Payment.countDocuments({
+              userId: user._id,
+              status: PaymentStatus.SUCCEEDED,
+              ...(paymentRecord ? { _id: { $ne: paymentRecord._id } } : {}), // Exclude current payment if it exists
+            });
+
+            // Only grant reward on first paid entry
+            if (previousSuccessfulPayments === 0) {
+              // Get the referrer
+              const referrer = await User.findById(user.referredBy);
+
+              if (referrer && !user.hasReceivedReferralReward) {
+                // Grant 10 free entries to referrer
+                await klaviyoService.grantFreeEntriesAndTrack(
+                  String(referrer._id),
+                  10,
+                  'referral_reward'
+                );
+
+                // Mark that reward has been given for this referral
+                user.hasReceivedReferralReward = true;
+                await user.save();
+
+                logger.info(
+                  `Granted 10 free entries to referrer ${referrer.email} for referral of ${email}`
+                );
+              }
+            }
+          } catch (error: any) {
+            logger.error('Error processing referral reward:', error);
+            // Don't fail payment if referral reward fails
+          }
+        }
+
+        // Update/identify profile in Klaviyo
+        if (user) {
+          await klaviyoService.identifyOrUpdateProfile(user);
+        }
       } catch (error: any) {
-        logger.error('Error sending Klaviyo notification:', error);
+        logger.error('Error tracking Klaviyo events:', error);
       }
     }
 
@@ -489,15 +610,23 @@ export async function handlePaymentSuccess(
       try {
         await emailService.sendPaymentSuccessEmail({
           email: order.billingDetails.email,
-          firstName: user?.firstName || order.billingDetails.firstName || 'Valued Customer',
+          firstName:
+            user?.firstName ||
+            order.billingDetails.firstName ||
+            'Valued Customer',
           lastName: user?.lastName || order.billingDetails.lastName,
           orderNumber: order.orderNumber,
           competitionTitle: competitionForKlaviyo.title,
           ticketNumbers: order.ticketsReserved,
-          amountGBP: (order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0)).toFixed(2),
+          amountGBP: (
+            order.amount ||
+            ((order as any).amountPence ? (order as any).amountPence / 100 : 0)
+          ).toFixed(2),
           orderId: String(order._id),
         });
-        logger.info(`Payment success email sent to ${order.billingDetails.email}`);
+        logger.info(
+          `Payment success email sent to ${order.billingDetails.email}`
+        );
       } catch (error: any) {
         logger.error('Error sending payment success email:', error);
         // Don't fail the payment process if email fails
@@ -646,7 +775,9 @@ async function handlePaymentFailure(capture: any) {
         userId: order.userId,
         competitionId: order.competitionId,
         payload: {
-          amount: order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
+          amount:
+            order.amount ||
+            ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
           ticketNumbers: order.ticketsReserved,
         },
       },
@@ -687,7 +818,7 @@ async function handleRefund(refund: any) {
 
     // Update payment
     await Payment.findByIdAndUpdate(payment._id, {
-        status: PaymentStatus.REFUNDED,
+      status: PaymentStatus.REFUNDED,
       refundId: refund.id,
       refundAmount: parseFloat(refund.amount.value), // Amount in decimal
     });
@@ -728,7 +859,9 @@ async function handleRefund(refund: any) {
         userId: order.userId,
         competitionId: order.competitionId,
         payload: {
-          amount: order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
+          amount:
+            order.amount ||
+            ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
           refundAmount: parseFloat(refund.amount.value),
           ticketNumbers: order.ticketsReserved,
         },
@@ -741,11 +874,17 @@ async function handleRefund(refund: any) {
         const user = order.userId ? await User.findById(order.userId) : null;
         await emailService.sendOrderRefundedEmail({
           email: order.billingDetails.email,
-          firstName: user?.firstName || order.billingDetails.firstName || 'Valued Customer',
+          firstName:
+            user?.firstName ||
+            order.billingDetails.firstName ||
+            'Valued Customer',
           lastName: user?.lastName || order.billingDetails.lastName,
           orderNumber: order.orderNumber,
           competitionTitle: competition.title,
-          amountGBP: (order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0)).toFixed(2),
+          amountGBP: (
+            order.amount ||
+            ((order as any).amountPence ? (order as any).amountPence / 100 : 0)
+          ).toFixed(2),
           refundReason: refund.reason || undefined,
         });
         logger.info(`Refund email sent to ${order.billingDetails.email}`);

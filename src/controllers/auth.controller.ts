@@ -15,6 +15,7 @@ import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
 import crypto from 'crypto';
 import emailService from '../services/email.service';
+import klaviyoService from '../services/klaviyo.service';
 import logger from '../utils/logger';
 
 /**
@@ -35,12 +36,26 @@ export const register = async (
       phone,
       password,
       subscribedToNewsletter,
+      referralCode, // Optional referral code from ?ref=code query param
     } = req.body;
 
     // Check if user exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       throw new ApiError('User already exists', 400);
+    }
+
+    // Handle referral code lookup if provided
+    let referrer: any = null;
+    if (referralCode) {
+      referrer = await User.findOne({
+        referralCode: referralCode.toUpperCase().trim(),
+      });
+
+      if (!referrer) {
+        logger.warn(`Invalid referral code provided: ${referralCode}`);
+        // Don't fail registration, just log and continue without referral
+      }
     }
 
     // Create user
@@ -51,6 +66,7 @@ export const register = async (
       phone,
       password,
       subscribedToNewsletter,
+      referredBy: referrer ? referrer._id : undefined,
     });
 
     // Generate verification token
@@ -71,7 +87,10 @@ export const register = async (
       );
       logger.info(`Verification email sent to ${user.email}`);
     } catch (emailError) {
-      logger.error(`Failed to send verification email to ${user.email}:`, emailError);
+      logger.error(
+        `Failed to send verification email to ${user.email}:`,
+        emailError
+      );
       // Don't fail registration if email fails, but log the error
     }
 
@@ -82,6 +101,42 @@ export const register = async (
     // Set cookies
     setAuthCookie(res, token);
     setRefreshCookie(res, refreshToken);
+
+    // Klaviyo integration
+    try {
+      // Identify/update profile in Klaviyo
+      await klaviyoService.identifyOrUpdateProfile(user);
+
+      // Handle referral tracking if referral code was valid
+      if (referrer && referrer.email) {
+        try {
+          // Track "Referred Friend" event for the referrer
+          await klaviyoService.trackEvent(referrer.email, 'Referred Friend', {
+            referred_email: email,
+            referred_user_id: String(user._id),
+            referred_first_name: firstName,
+            referred_last_name: lastName,
+          });
+          logger.info(
+            `Referred Friend event tracked for referrer ${referrer.email} - new user: ${email}`
+          );
+        } catch (error: any) {
+          logger.error('Error tracking Referred Friend event:', error);
+          // Don't fail registration if Klaviyo fails
+        }
+      }
+
+      // Subscribe to email list if opted in
+      if (subscribedToNewsletter) {
+        await klaviyoService.subscribeToEmailList(email);
+      }
+    } catch (error: any) {
+      logger.error(
+        'Error with Klaviyo integration during registration:',
+        error
+      );
+      // Don't fail registration if Klaviyo fails
+    }
 
     // Remove password from response
     const userResponse = user.toObject();
@@ -208,9 +263,7 @@ export const updateProfile = async (
       runValidators: true,
     }).select('-password');
 
-    res.json(
-      ApiResponse.success({ user }, 'Profile updated successfully')
-    );
+    res.json(ApiResponse.success({ user }, 'Profile updated successfully'));
   } catch (error) {
     next(error);
   }
@@ -271,7 +324,10 @@ export const verifyEmail = async (
       throw new ApiError('Verification token is required', 400);
     }
 
-    const hashedToken = crypto.createHash('sha256').update(token as string).digest('hex');
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(token as string)
+      .digest('hex');
 
     const user = await User.findOne({
       emailVerificationToken: hashedToken,
@@ -284,9 +340,7 @@ export const verifyEmail = async (
 
     // Check if already verified
     if (user.isVerified) {
-      res.json(
-        ApiResponse.success(null, 'Email is already verified')
-      );
+      res.json(ApiResponse.success(null, 'Email is already verified'));
       return;
     }
 
@@ -337,7 +391,10 @@ export const forgotPassword = async (
       );
       logger.info(`Password reset email sent to ${user.email}`);
     } catch (emailError) {
-      logger.error(`Failed to send password reset email to ${user.email}:`, emailError);
+      logger.error(
+        `Failed to send password reset email to ${user.email}:`,
+        emailError
+      );
       // Don't fail the request if email fails, but log the error
     }
 
@@ -650,9 +707,7 @@ export const resendVerificationEmail = async (
 
     // Check if already verified
     if (user.isVerified) {
-      res.json(
-        ApiResponse.success(null, 'Email is already verified')
-      );
+      res.json(ApiResponse.success(null, 'Email is already verified'));
       return;
     }
 
@@ -674,7 +729,10 @@ export const resendVerificationEmail = async (
       );
       logger.info(`Verification email resent to ${user.email}`);
     } catch (emailError) {
-      logger.error(`Failed to send verification email to ${user.email}:`, emailError);
+      logger.error(
+        `Failed to send verification email to ${user.email}:`,
+        emailError
+      );
       throw new ApiError('Failed to send verification email', 500);
     }
 

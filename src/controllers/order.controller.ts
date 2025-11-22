@@ -18,6 +18,7 @@ import paypalService from '../services/paypal.service';
 import { config } from '../config/environment';
 import { generateOrderNumber } from '../utils/randomGenerator';
 import emailService from '../services/email.service';
+import klaviyoService from '../services/klaviyo.service';
 import logger from '../utils/logger';
 
 const formatOrderResponse = (order: any) => {
@@ -28,7 +29,9 @@ const formatOrderResponse = (order: any) => {
     userId: doc.userId,
     orderNumber: doc.orderNumber,
     amount: doc.amount || doc.amountPence, // Support legacy amountPence
-    amountGBP: (doc.amount || (doc.amountPence ? doc.amountPence / 100 : 0)).toFixed(2),
+    amountGBP: (
+      doc.amount || (doc.amountPence ? doc.amountPence / 100 : 0)
+    ).toFixed(2),
     currency: doc.currency,
     quantity: doc.quantity,
     status: doc.status,
@@ -250,19 +253,18 @@ export const createOrder = async (
     const {
       competitionId,
       qty,
-      ticketsReserved,
+      ticketsReserved, // Optional - will be auto-reserved if not provided
       billingDetails,
       shippingAddress,
       marketingOptIn,
     } = req.body;
 
-    if (
-      !competitionId ||
-      !qty ||
-      !ticketsReserved ||
-      !Array.isArray(ticketsReserved)
-    ) {
-      throw new ApiError('Missing required fields', 400);
+    if (!competitionId || !qty) {
+      throw new ApiError('Missing required fields: competitionId and qty', 400);
+    }
+
+    if (ticketsReserved && !Array.isArray(ticketsReserved)) {
+      throw new ApiError('ticketsReserved must be an array if provided', 400);
     }
 
     if (!billingDetails || !billingDetails.email) {
@@ -309,20 +311,188 @@ export const createOrder = async (
       );
     }
 
-    // Verify reserved tickets exist and are still reserved
-    const reservedTickets = await Ticket.find({
-      competitionId,
-      ticketNumber: { $in: ticketsReserved },
-      status: TicketStatus.RESERVED,
-      reservedUntil: { $gt: new Date() },
-    });
+    // Check available tickets
+    const availableTickets =
+      competition.ticketLimit !== null
+        ? competition.ticketLimit - competition.ticketsSold
+        : Infinity;
 
-    if (reservedTickets.length !== qty) {
-      throw new ApiError('Some reserved tickets are no longer available', 400);
+    if (availableTickets !== Infinity && qty > availableTickets) {
+      throw new ApiError(
+        `Only ${availableTickets} tickets remaining for this competition`,
+        400
+      );
+    }
+
+    // Reserve tickets automatically if not provided
+    let finalTicketsReserved: number[] = [];
+
+    if (
+      ticketsReserved &&
+      Array.isArray(ticketsReserved) &&
+      ticketsReserved.length > 0
+    ) {
+      // Verify provided reserved tickets exist and are still reserved
+      const reservedTickets = await Ticket.find({
+        competitionId,
+        ticketNumber: { $in: ticketsReserved },
+        status: TicketStatus.RESERVED,
+        reservedUntil: { $gt: now },
+      });
+
+      if (reservedTickets.length !== qty) {
+        // Get detailed information about what happened to the tickets
+        const allTickets = await Ticket.find({
+          competitionId,
+          ticketNumber: { $in: ticketsReserved },
+        }).lean();
+
+        const foundNumbers = new Set(
+          allTickets.map((t: any) => t.ticketNumber)
+        );
+        const missingNumbers = (ticketsReserved as number[]).filter(
+          (num: number) => !foundNumbers.has(num)
+        );
+
+        const expiredTickets = allTickets.filter(
+          (t: any) =>
+            t.status === TicketStatus.RESERVED &&
+            t.reservedUntil &&
+            new Date(t.reservedUntil) <= now
+        );
+
+        const purchasedTickets = allTickets.filter(
+          (t: any) =>
+            t.status === TicketStatus.ACTIVE || t.status === TicketStatus.WINNER
+        );
+
+        // Build detailed error message
+        let errorMessage = 'Some reserved tickets are no longer available. ';
+        const details: string[] = [];
+
+        if (missingNumbers.length > 0) {
+          details.push(
+            `${missingNumbers.length} ticket(s) not found in database`
+          );
+        }
+        if (expiredTickets.length > 0) {
+          details.push(
+            `${expiredTickets.length} ticket(s) reservation expired`
+          );
+        }
+        if (purchasedTickets.length > 0) {
+          details.push(
+            `${purchasedTickets.length} ticket(s) already purchased`
+          );
+        }
+
+        if (details.length > 0) {
+          errorMessage += `Details: ${details.join(', ')}.`;
+        }
+
+        errorMessage += ' Please refresh and try again.';
+
+        // Log detailed information for debugging
+        logger.warn('Reserved tickets validation failed', {
+          competitionId,
+          requestedTickets: ticketsReserved,
+          requestedQuantity: qty,
+          foundReserved: reservedTickets.length,
+          missingNumbers,
+          expiredCount: expiredTickets.length,
+          purchasedCount: purchasedTickets.length,
+          allTicketsStatus: allTickets.map((t: any) => ({
+            ticketNumber: t.ticketNumber,
+            status: t.status,
+            reservedUntil: t.reservedUntil,
+          })),
+        });
+
+        throw new ApiError(errorMessage, 400);
+      }
+
+      finalTicketsReserved = ticketsReserved;
+    } else {
+      // Automatically reserve tickets - find available ticket numbers
+      const reservedUntil = new Date(now.getTime() + 15 * 60 * 1000); // 15 minutes
+
+      // Get all existing ticket numbers (active, winner, or validly reserved)
+      const existingTickets = await Ticket.find({
+        competitionId,
+        $or: [
+          { status: { $in: [TicketStatus.ACTIVE, TicketStatus.WINNER] } },
+          {
+            status: TicketStatus.RESERVED,
+            reservedUntil: { $gt: now },
+          },
+        ],
+      })
+        .select('ticketNumber')
+        .sort({ ticketNumber: 1 })
+        .lean();
+
+      const existingNumbers = new Set(
+        existingTickets.map((t: any) => t.ticketNumber)
+      );
+
+      // Find available ticket numbers
+      const availableNumbers: number[] = [];
+      let candidate = 1;
+
+      while (availableNumbers.length < qty) {
+        if (!existingNumbers.has(candidate)) {
+          availableNumbers.push(candidate);
+        }
+        candidate++;
+
+        if (candidate > 1000000) {
+          throw new ApiError('Unable to find available ticket numbers', 500);
+        }
+      }
+
+      // Reserve tickets atomically
+      const ticketsToCreate = availableNumbers.map((ticketNumber) => ({
+        competitionId,
+        ticketNumber,
+        userId: req.user?._id || undefined,
+        status: TicketStatus.RESERVED,
+        reservedUntil,
+      }));
+
+      try {
+        await Ticket.insertMany(ticketsToCreate, { ordered: false });
+        finalTicketsReserved = availableNumbers;
+        logger.info(
+          `Auto-reserved ${availableNumbers.length} tickets for order creation`,
+          {
+            competitionId,
+            ticketNumbers: availableNumbers,
+            userId: req.user?._id,
+          }
+        );
+      } catch (insertError: any) {
+        if (insertError.code === 11000) {
+          // Duplicate key - tickets were taken by another request
+          logger.warn('Tickets taken by concurrent request, retrying...', {
+            competitionId,
+            attemptedNumbers: availableNumbers,
+          });
+          throw new ApiError(
+            'Tickets are no longer available. Please try again.',
+            409
+          );
+        }
+        logger.error('Error auto-reserving tickets:', insertError);
+        throw new ApiError('Failed to reserve tickets. Please try again.', 500);
+      }
     }
 
     // Calculate amount
-    const ticketPrice = competition.ticketPrice || ((competition as any).ticketPricePence ? (competition as any).ticketPricePence / 100 : 0);
+    const ticketPrice =
+      competition.ticketPrice ||
+      ((competition as any).ticketPricePence
+        ? (competition as any).ticketPricePence / 100
+        : 0);
     const amount = Number((ticketPrice * qty).toFixed(2));
 
     // Generate unique order number
@@ -350,7 +520,7 @@ export const createOrder = async (
       quantity: qty,
       status: OrderStatus.PENDING,
       paymentStatus: OrderPaymentStatus.PENDING,
-      ticketsReserved,
+      ticketsReserved: finalTicketsReserved,
       billingDetails,
       shippingAddress,
       marketingOptIn: marketingOptIn || false,
@@ -361,9 +531,9 @@ export const createOrder = async (
     const paypalOrder = await paypalService.createOrder({
       amount: amount, // Amount in decimal
       currency: 'GBP',
-        orderId: orderId,
+      orderId: orderId,
       userId: req.user?._id?.toString() || 'guest',
-        competitionId: competitionId,
+      competitionId: competitionId,
       returnUrl: `${config.frontendUrl}/payment/success?orderId=${orderId}`,
       cancelUrl: `${config.frontendUrl}/payment/cancel?orderId=${orderId}`,
     });
@@ -371,6 +541,33 @@ export const createOrder = async (
     // Update order with PayPal order ID
     order.paypalOrderId = paypalOrder.id;
     await order.save();
+
+    // Track "Started Checkout" event in Klaviyo
+    try {
+      const email = billingDetails?.email;
+      if (email) {
+        await klaviyoService.trackEvent(
+          email,
+          'Started Checkout',
+          {
+            competition_id: competitionId,
+            competition_name: competition.title,
+            order_id: orderId,
+            items: [
+              {
+                competition_id: competitionId,
+                competition_name: competition.title,
+                quantity: qty,
+                ticket_numbers: finalTicketsReserved,
+              },
+            ],
+          },
+          amount
+        );
+      }
+    } catch (error: any) {
+      logger.error('Error tracking Started Checkout event:', error);
+    }
 
     // Create event log
     await Event.create({
@@ -382,7 +579,7 @@ export const createOrder = async (
       payload: {
         amount,
         quantity: qty,
-        ticketsReserved,
+        ticketsReserved: finalTicketsReserved,
       },
     });
 

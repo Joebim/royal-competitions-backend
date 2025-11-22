@@ -14,7 +14,6 @@ import {
   Competition,
   Event,
   EventType,
-  User,
 } from '../models';
 import { OrderPaymentStatus, OrderStatus } from '../models/Order.model';
 import { CompetitionStatus } from '../models/Competition.model';
@@ -375,8 +374,7 @@ export async function handlePaymentSuccess(capture: any) {
       }
     );
 
-    // Get user and competition for Klaviyo
-    const user = order.userId ? await User.findById(order.userId) : null;
+    // Get competition for Klaviyo
     const competitionForKlaviyo = await Competition.findById(
       order.competitionId
     );
@@ -384,15 +382,30 @@ export async function handlePaymentSuccess(capture: any) {
     // Send Klaviyo notification
     if (competitionForKlaviyo && order.billingDetails?.email) {
       try {
-        await klaviyoService.trackTicketPurchased(
+        // Track "Placed Order" event
+        await klaviyoService.trackEvent(
           order.billingDetails.email,
-          order.billingDetails.phone || user?.phone,
-          String(competitionForKlaviyo._id),
-          competitionForKlaviyo.title,
-          order.ticketsReserved,
-          order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
-          user?.firstName || order.billingDetails.firstName,
-          user?.lastName || order.billingDetails.lastName
+          'Placed Order',
+          {
+            competition_id: String(competitionForKlaviyo._id),
+            competition_name: competitionForKlaviyo.title,
+            order_id: String(order._id),
+            ticket_numbers: order.ticketsReserved,
+          },
+          order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0)
+        );
+        
+        // Track "Paid Competition Entry" event
+        await klaviyoService.trackEvent(
+          order.billingDetails.email,
+          'Paid Competition Entry',
+          {
+            competition_id: String(competitionForKlaviyo._id),
+            competition_name: competitionForKlaviyo.title,
+            order_id: String(order._id),
+            ticket_numbers: order.ticketsReserved,
+          },
+          order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0)
         );
       } catch (error: any) {
         logger.error('Error sending Klaviyo notification:', error);

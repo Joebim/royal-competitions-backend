@@ -22,6 +22,9 @@ export interface IUser extends Document {
   passwordResetExpire?: Date;
   subscribedToNewsletter: boolean;
   mailchimpSubscriberId?: string;
+  referralCode?: string; // Unique referral code for this user
+  referredBy?: mongoose.Types.ObjectId; // User ID who referred this user
+  hasReceivedReferralReward?: boolean; // Track if referrer has received reward for this referral
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -83,6 +86,21 @@ const userSchema = new Schema<IUser>(
       default: false,
     },
     mailchimpSubscriberId: String,
+    referralCode: {
+      type: String,
+      unique: true,
+      sparse: true, // Allow null values but enforce uniqueness for non-null values
+      trim: true,
+      uppercase: true,
+    },
+    referredBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    hasReceivedReferralReward: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
@@ -94,6 +112,47 @@ const userSchema = new Schema<IUser>(
 // Indexes
 // email already has unique: true which creates an index automatically
 userSchema.index({ createdAt: -1 });
+userSchema.index({ referralCode: 1 }); // Index for referral code lookups
+userSchema.index({ referredBy: 1 }); // Index for finding users referred by someone
+
+// Generate referral code before saving (if new user and no code exists)
+userSchema.pre('save', async function (next) {
+  // Generate unique referral code for new users
+  if (this.isNew && !this.referralCode) {
+    let code: string = '';
+    let isUnique = false;
+
+    // Generate a unique referral code (8 alphanumeric characters)
+    while (!isUnique) {
+      // Use first 3 letters of first name + last 3 of last name + random 2 chars
+      const firstNamePart = (this.firstName || 'USR')
+        .substring(0, 3)
+        .toUpperCase()
+        .padEnd(3, 'X');
+      const lastNamePart = (this.lastName || 'REF')
+        .substring(Math.max(0, (this.lastName || '').length - 3))
+        .toUpperCase()
+        .padStart(3, 'X');
+      const randomPart = Math.random()
+        .toString(36)
+        .substring(2, 4)
+        .toUpperCase();
+      code = `${firstNamePart}${lastNamePart}${randomPart}`.substring(0, 8);
+
+      // Check if code already exists (use mongoose.model to avoid circular dependency)
+      const existing = await mongoose.connection.models.User?.findOne({
+        referralCode: code,
+      });
+      if (!existing) {
+        isUnique = true;
+      }
+    }
+
+    this.referralCode = code;
+  }
+
+  next();
+});
 
 // Hash password before saving
 userSchema.pre('save', async function (next) {

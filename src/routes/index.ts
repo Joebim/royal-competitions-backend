@@ -17,6 +17,7 @@ import adminRoutes from './admin.routes';
 import winnerRoutes from './winner.routes';
 import ticketRoutes from './ticket.routes';
 import categoryRoutes from './category.routes';
+import entryRoutes from './entry.routes';
 
 const router = Router();
 
@@ -39,9 +40,6 @@ router.use('/admin', adminRoutes);
 router.use('/winners', winnerRoutes);
 router.use('/tickets', ticketRoutes);
 router.use('/categories', categoryRoutes);
+router.use('/entries', entryRoutes);
 
 export default router;
-
-
-
-

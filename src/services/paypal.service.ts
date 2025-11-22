@@ -32,20 +32,19 @@ function paypalClient() {
 }
 
 class PayPalService {
-
   /**
    * Create PayPal order
    */
   async createOrder(data: CreateOrderData): Promise<any> {
     try {
       const client = paypalClient();
-      
+
       // Format amount to 2 decimal places (e.g., 3.99 = 3.99 GBP)
       const amountValue = data.amount.toFixed(2);
 
       const request = new checkoutNodeJssdk.orders.OrdersCreateRequest();
       request.prefer('return=representation');
-      
+
       request.requestBody({
         intent: 'CAPTURE',
         purchase_units: [
@@ -62,6 +61,10 @@ class PayPalService {
           brand_name: 'Royal Competitions',
           landing_page: 'NO_PREFERENCE',
           user_action: 'PAY_NOW',
+          // Note: Apple Pay will appear automatically in PayPal Checkout if:
+          // 1. Your PayPal business account is eligible/approved for Apple Pay
+          // 2. The frontend PayPal SDK is properly configured
+          // 3. The user is on a supported device (iOS/macOS with Safari)
           ...(data.returnUrl && { return_url: data.returnUrl }),
           ...(data.cancelUrl && { cancel_url: data.cancelUrl }),
         },
@@ -84,7 +87,9 @@ class PayPalService {
     try {
       const client = paypalClient();
 
-      const request = new checkoutNodeJssdk.orders.OrdersCaptureRequest(orderId);
+      const request = new checkoutNodeJssdk.orders.OrdersCaptureRequest(
+        orderId
+      );
       request.prefer('return=representation');
 
       const response = await client.execute(request);
@@ -118,11 +123,17 @@ class PayPalService {
   /**
    * Refund PayPal payment
    */
-  async createRefund(captureId: string, amount?: number, currency: string = 'GBP'): Promise<any> {
+  async createRefund(
+    captureId: string,
+    amount?: number,
+    currency: string = 'GBP'
+  ): Promise<any> {
     try {
       const client = paypalClient();
 
-      const request = new checkoutNodeJssdk.payments.CapturesRefundRequest(captureId);
+      const request = new checkoutNodeJssdk.payments.CapturesRefundRequest(
+        captureId
+      );
       request.prefer('return=representation');
 
       if (amount) {
@@ -159,15 +170,17 @@ class PayPalService {
       // as the SDK doesn't provide webhook verification methods
       const axios = require('axios');
       const baseUrl = config.paypal.baseUrl;
-      
+
       // Get access token for webhook verification
-      const auth = Buffer.from(`${config.paypal.clientId}:${config.paypal.clientSecret}`).toString('base64');
+      const auth = Buffer.from(
+        `${config.paypal.clientId}:${config.paypal.clientSecret}`
+      ).toString('base64');
       const tokenResponse = await axios.post(
         `${baseUrl}/v1/oauth2/token`,
         'grant_type=client_credentials',
         {
           headers: {
-            'Authorization': `Basic ${auth}`,
+            Authorization: `Basic ${auth}`,
             'Content-Type': 'application/x-www-form-urlencoded',
           },
         }
@@ -188,7 +201,7 @@ class PayPalService {
         },
         {
           headers: {
-            'Authorization': `Bearer ${accessToken}`,
+            Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
           },
         }
@@ -203,4 +216,3 @@ class PayPalService {
 }
 
 export default new PayPalService();
-

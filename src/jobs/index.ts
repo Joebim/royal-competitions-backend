@@ -1,8 +1,10 @@
 import cron from 'node-cron';
 import logger from '../utils/logger';
-import { Competition, Ticket, TicketStatus } from '../models';
+import { Competition, Ticket, TicketStatus, Order } from '../models';
 import { CompetitionStatus, DrawMode } from '../models/Competition.model';
+import { OrderPaymentStatus, OrderStatus } from '../models/Order.model';
 import { runAutomaticDraw } from '../controllers/draw.controller';
+import klaviyoService from '../services/klaviyo.service';
 
 /**
  * Clean up expired reservations
@@ -149,7 +151,89 @@ export const startScheduledJobs = () => {
     endCompetitionsPastEndDate();
   });
 
+  // Detect and track abandoned checkouts every 5 minutes
+  cron.schedule('*/5 * * * *', () => {
+    logger.info('Running abandoned checkout detection job');
+    detectAbandonedCheckouts();
+  });
+
   logger.info('Scheduled jobs started');
+};
+
+/**
+ * Detect abandoned checkouts and track in Klaviyo
+ * Finds orders that are PENDING and created more than 15 minutes ago
+ * Tracks "Abandoned Checkout" event and marks order for tracking
+ * Runs every 5 minutes
+ */
+const detectAbandonedCheckouts = async () => {
+  try {
+    const now = new Date();
+    const fifteenMinutesAgo = new Date(now.getTime() - 15 * 60 * 1000);
+
+    // Find orders that are:
+    // 1. PENDING payment status
+    // 2. Created more than 15 minutes ago
+    // 3. Have billing email (required for Klaviyo tracking)
+    // 4. Haven't been marked as abandoned yet (we'll use a flag or check if event was tracked)
+    const abandonedOrders = await Order.find({
+      paymentStatus: OrderPaymentStatus.PENDING,
+      status: OrderStatus.PENDING,
+      createdAt: { $lte: fifteenMinutesAgo },
+      'billingDetails.email': { $exists: true, $ne: null },
+      // Add a field to track if abandoned checkout event was sent
+      // For now, we'll check if order doesn't have paymentReference (not paid)
+      paymentReference: { $exists: false },
+    })
+      .populate('competitionId', 'title')
+      .limit(100); // Process max 100 at a time to avoid overload
+
+    let trackedCount = 0;
+
+    for (const order of abandonedOrders) {
+      try {
+        const email = order.billingDetails?.email;
+        if (!email) continue;
+
+        const competition = order.competitionId as any;
+        const competitionId = String(order.competitionId);
+        const orderAmount = order.amount || 0;
+
+        // Track "Abandoned Checkout" event in Klaviyo
+        await klaviyoService.trackEvent(
+          email,
+          'Abandoned Checkout',
+          {
+            competition_id: competitionId,
+            competition_name: competition?.title || 'Unknown Competition',
+            order_id: String(order._id),
+            order_number: order.orderNumber,
+            items: [
+              {
+                competition_id: competitionId,
+                competition_name: competition?.title || 'Unknown Competition',
+                quantity: order.quantity,
+                ticket_numbers: order.ticketsReserved || [],
+              },
+            ],
+          },
+          orderAmount
+        );
+
+        trackedCount++;
+        logger.info(`Tracked abandoned checkout for order ${order.orderNumber} (${email})`);
+      } catch (error: any) {
+        logger.error(`Error tracking abandoned checkout for order ${order._id}:`, error);
+        // Continue with next order
+      }
+    }
+
+    if (trackedCount > 0) {
+      logger.info(`Detected and tracked ${trackedCount} abandoned checkouts`);
+    }
+  } catch (error: any) {
+    logger.error('Error detecting abandoned checkouts:', error);
+  }
 };
 
 

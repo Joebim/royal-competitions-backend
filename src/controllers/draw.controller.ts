@@ -127,21 +127,33 @@ export const runDraw = async (
       if (isPrimary && ticket.userId) {
         const user = await User.findById(ticket.userId);
         if (user && user.email) {
-          // Send Klaviyo notification
+          // Track "Won Competition" event in Klaviyo
           try {
-          await klaviyoService.trackWinnerNotification(
-            user.email,
-            user.phone,
-            String(competition._id),
-            competition.title,
-            competition.prize,
-            ticket.ticketNumber,
-            winner[0].claimCode,
-            user.firstName,
-            user.lastName
-          );
+            // Determine prize type
+            let prizeType = 'other';
+            const prizeLower = competition.prize.toLowerCase();
+            if (prizeLower.includes('cash') || prizeLower.includes('£') || prizeLower.includes('money')) {
+              prizeType = 'cash';
+            } else if (prizeLower.includes('car') || prizeLower.includes('vehicle')) {
+              prizeType = 'car';
+            } else if (prizeLower.includes('holiday') || prizeLower.includes('trip') || prizeLower.includes('vacation')) {
+              prizeType = 'holiday';
+            }
+
+            await klaviyoService.trackEvent(
+              user.email,
+              'Won Competition',
+              {
+                competition_id: String(competition._id),
+                competition_name: competition.title,
+                ticket_number: ticket.ticketNumber,
+                claim_code: winner[0].claimCode,
+                prize_type: prizeType,
+              },
+              competition.prizeValue || competition.cashAlternative || 0
+            );
           } catch (error: any) {
-            logger.error('Error sending Klaviyo winner notification:', error);
+            logger.error('Error tracking Won Competition event:', error);
           }
 
           // Send email notification
@@ -347,17 +359,34 @@ export const addManualWinner = async (
     if (ticket.userId) {
       const user = await User.findById(ticket.userId);
       if (user && user.email) {
-        await klaviyoService.trackWinnerNotification(
-          user.email,
-          user.phone,
-          String(competition._id),
-          competition.title,
-          competition.prize,
-          ticketNumber,
-          winner[0].claimCode,
-          user.firstName,
-          user.lastName
-        );
+        // Track "Won Competition" event in Klaviyo
+        try {
+          // Determine prize type
+          let prizeType = 'other';
+          const prizeLower = competition.prize.toLowerCase();
+          if (prizeLower.includes('cash') || prizeLower.includes('£') || prizeLower.includes('money')) {
+            prizeType = 'cash';
+          } else if (prizeLower.includes('car') || prizeLower.includes('vehicle')) {
+            prizeType = 'car';
+          } else if (prizeLower.includes('holiday') || prizeLower.includes('trip') || prizeLower.includes('vacation')) {
+            prizeType = 'holiday';
+          }
+
+          await klaviyoService.trackEvent(
+            user.email,
+            'Won Competition',
+            {
+              competition_id: String(competition._id),
+              competition_name: competition.title,
+              ticket_number: ticketNumber,
+              claim_code: winner[0].claimCode,
+              prize_type: prizeType,
+            },
+            competition.prizeValue || competition.cashAlternative || 0
+          );
+        } catch (error: any) {
+          logger.error('Error tracking Won Competition event:', error);
+        }
 
         winner[0].notified = true;
         winner[0].notifiedAt = new Date();
@@ -930,17 +959,34 @@ export const runAutomaticDraw = async (
       if (isPrimary && ticket.userId) {
         const user = await User.findById(ticket.userId);
         if (user && user.email) {
-          await klaviyoService.trackWinnerNotification(
-            user.email,
-            user.phone,
-            String(competition._id),
-            competition.title,
-            competition.prize,
-            ticket.ticketNumber,
-            winner[0].claimCode,
-            user.firstName,
-            user.lastName
-          );
+          // Track "Won Competition" event in Klaviyo
+          try {
+            // Determine prize type
+            let prizeType = 'other';
+            const prizeLower = competition.prize.toLowerCase();
+            if (prizeLower.includes('cash') || prizeLower.includes('£') || prizeLower.includes('money')) {
+              prizeType = 'cash';
+            } else if (prizeLower.includes('car') || prizeLower.includes('vehicle')) {
+              prizeType = 'car';
+            } else if (prizeLower.includes('holiday') || prizeLower.includes('trip') || prizeLower.includes('vacation')) {
+              prizeType = 'holiday';
+            }
+
+            await klaviyoService.trackEvent(
+              user.email,
+              'Won Competition',
+              {
+                competition_id: String(competition._id),
+                competition_name: competition.title,
+                ticket_number: ticket.ticketNumber,
+                claim_code: winner[0].claimCode,
+                prize_type: prizeType,
+              },
+              competition.prizeValue || competition.cashAlternative || 0
+            );
+          } catch (error: any) {
+            logger.error('Error tracking Won Competition event:', error);
+          }
 
           winner[0].notified = true;
           winner[0].notifiedAt = new Date();

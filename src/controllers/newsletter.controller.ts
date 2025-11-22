@@ -1,7 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
-import { Newsletter } from '../models';
+import { Newsletter, User } from '../models';
 import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
+import klaviyoService from '../services/klaviyo.service';
+import logger from '../utils/logger';
 
 /**
  * @desc    Subscribe to newsletter
@@ -14,7 +16,7 @@ export const subscribe = async (
   next: NextFunction
 ) => {
   try {
-    const { email, firstName, lastName, source = 'website' } = req.body;
+    const { email, firstName, lastName, source = 'website', smsConsent, phone } = req.body;
 
     // Check if already subscribed
     let subscriber = await Newsletter.findOne({ email });
@@ -40,6 +42,41 @@ export const subscribe = async (
         source,
         subscribedAt: new Date(),
       });
+    }
+
+    // Klaviyo integration
+    try {
+      // Subscribe to email list
+      await klaviyoService.subscribeToEmailList(email);
+
+      // Subscribe to SMS list if consent given
+      if (smsConsent && phone) {
+        await klaviyoService.subscribeToSMSList(phone, email);
+      }
+
+      // Grant free entries if user exists
+      const user = await User.findOne({ email });
+      if (user) {
+        await klaviyoService.grantFreeEntriesAndTrack(
+          String(user._id),
+          3,
+          'newsletter_signup'
+        );
+      }
+
+      // Track "Subscribed For Free Entries" event
+      await klaviyoService.trackEvent(
+        email,
+        'Subscribed For Free Entries',
+        {
+          source: 'newsletter_signup',
+          first_name: firstName,
+          last_name: lastName,
+        }
+      );
+    } catch (error: any) {
+      logger.error('Error with Klaviyo subscription:', error);
+      // Don't fail the subscription if Klaviyo fails
     }
 
     res.json(ApiResponse.success({ subscriber }, 'Successfully subscribed to newsletter'));

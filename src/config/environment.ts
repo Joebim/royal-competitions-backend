@@ -37,6 +37,8 @@ interface Config {
   klaviyo: {
     publicKey: string;
     privateKey: string;
+    listIdNewsletter?: string;
+    listIdSMS?: string;
   };
   email: {
     service: string;
@@ -115,7 +117,12 @@ export const config: Config = {
   },
   klaviyo: {
     publicKey: process.env.KLAVIYO_PUBLIC_KEY || '',
-    privateKey: process.env.KLAVIYO_PRIVATE_KEY || '',
+    privateKey:
+      process.env.KLAVIYO_PRIVATE_KEY ||
+      process.env.KLAVIYO_PRIVATE_API_KEY ||
+      '',
+    listIdNewsletter: process.env.KLAVIYO_LIST_ID_NEWSLETTER || '',
+    listIdSMS: process.env.KLAVIYO_LIST_ID_SMS || '',
   },
   email: {
     service: process.env.EMAIL_SERVICE || 'gmail',
@@ -128,7 +135,7 @@ export const config: Config = {
       email: process.env.EMAIL_NOREPLY || 'noreply@royalcompetitions.co.uk',
       name: process.env.EMAIL_NOREPLY_NAME || 'Royal Competitions',
     },
-    
+
     // Info email configuration (for order updates, payments, winners)
     info: {
       user: process.env.EMAIL_INFO_USER || '',
