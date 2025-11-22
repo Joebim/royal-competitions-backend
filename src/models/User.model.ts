@@ -111,8 +111,8 @@ const userSchema = new Schema<IUser>(
 
 // Indexes
 // email already has unique: true which creates an index automatically
+// referralCode already has unique: true which creates an index automatically
 userSchema.index({ createdAt: -1 });
-userSchema.index({ referralCode: 1 }); // Index for referral code lookups
 userSchema.index({ referredBy: 1 }); // Index for finding users referred by someone
 
 // Generate referral code before saving (if new user and no code exists)

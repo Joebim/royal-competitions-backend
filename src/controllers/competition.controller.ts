@@ -1,6 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
 import { FilterQuery, SortOrder } from 'mongoose';
-import { Competition, Entry, UserRole, Category, Ticket, TicketStatus } from '../models';
+import {
+  Competition,
+  Entry,
+  UserRole,
+  Category,
+  Ticket,
+  TicketStatus,
+} from '../models';
 import { CompetitionStatus, ICompetition } from '../models/Competition.model';
 import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
@@ -234,18 +241,26 @@ const parseCompetitionPayload = (body: any) => {
 
   // Ticket price in decimal
   const ticketPriceInput = body.ticketPrice ?? body.price ?? body.ticket_price;
-  if (ticketPriceInput !== undefined && ticketPriceInput !== null && ticketPriceInput !== '') {
+  if (
+    ticketPriceInput !== undefined &&
+    ticketPriceInput !== null &&
+    ticketPriceInput !== ''
+  ) {
     // Check if input is a string with decimal point (definitely decimal format)
-    const isDecimalString = typeof ticketPriceInput === 'string' && ticketPriceInput.includes('.');
+    const isDecimalString =
+      typeof ticketPriceInput === 'string' && ticketPriceInput.includes('.');
     const ticketPrice = parseNumberParam(ticketPriceInput);
-    
+
     if (ticketPrice !== undefined) {
       // If input has decimal point OR value is less than 1, treat as decimal
       // Otherwise, if >= 100 and is whole number, treat as pence
       if (isDecimalString || ticketPrice < 1) {
         // It's already in decimal format (e.g., "0.99", "1.50", "3.99", "0.50")
         payload.ticketPrice = Number(ticketPrice.toFixed(2));
-      } else if (ticketPrice >= 100 && Math.abs(ticketPrice - Math.round(ticketPrice)) < 0.001) {
+      } else if (
+        ticketPrice >= 100 &&
+        Math.abs(ticketPrice - Math.round(ticketPrice)) < 0.001
+      ) {
         // It's pence (e.g., 100, 199, 500), convert to decimal
         payload.ticketPrice = Number((ticketPrice / 100).toFixed(2));
       } else {
@@ -476,7 +491,7 @@ export const getCompetition = async (
     const isAdmin = req.user
       ? [UserRole.ADMIN, UserRole.SUPER_ADMIN].includes(req.user.role)
       : false;
-    
+
     // For admins, allow viewing inactive/deleted competitions
     // For non-admins, only show active, non-deleted competitions
     const query: any = { _id: req.params.id };
@@ -836,7 +851,11 @@ export const duplicateCompetition = async (
       cashAlternative: originalCompetition.cashAlternative,
       cashAlternativeDetails: originalCompetition.cashAlternativeDetails,
       originalPrice: originalCompetition.originalPrice,
-      ticketPrice: originalCompetition.ticketPrice || ((originalCompetition as any).ticketPricePence ? (originalCompetition as any).ticketPricePence / 100 : 0),
+      ticketPrice:
+        originalCompetition.ticketPrice ||
+        ((originalCompetition as any).ticketPricePence
+          ? (originalCompetition as any).ticketPricePence / 100
+          : 0),
       ticketLimit: originalCompetition.ticketLimit,
       ticketsSold: 0, // Reset tickets sold
       status: CompetitionStatus.DRAFT, // Always start as draft
