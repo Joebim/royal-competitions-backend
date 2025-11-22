@@ -46,7 +46,27 @@ const parseNumberParam = (value: unknown): number | undefined => {
 
 const parseDateParam = (value: unknown): Date | undefined => {
   if (!value) return undefined;
-  const date = new Date(String(value));
+  
+  const dateString = String(value);
+  
+  // If the date string includes a timezone offset (e.g., +01:00, -05:00)
+  // Extract the date/time components and preserve them as-is
+  // This prevents timezone conversion - we store the exact time the user specified
+  if (dateString.includes('+') || dateString.match(/-\d{2}:\d{2}$/)) {
+    // Extract date and time components (ignore timezone offset)
+    // Format: YYYY-MM-DDTHH:mm:ss+HH:mm or YYYY-MM-DDTHH:mm:ss-HH:mm
+    const match = dateString.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+    if (match) {
+      const [, datePart, hours, minutes, seconds] = match;
+      // Create a new date using the time components as UTC
+      // This preserves the wall clock time (21:45 stays 21:45)
+      const preservedDate = new Date(`${datePart}T${hours}:${minutes}:${seconds}Z`);
+      return Number.isNaN(preservedDate.getTime()) ? undefined : preservedDate;
+    }
+  }
+  
+  // For dates without timezone or other formats, use standard parsing
+  const date = new Date(dateString);
   return Number.isNaN(date.getTime()) ? undefined : date;
 };
 

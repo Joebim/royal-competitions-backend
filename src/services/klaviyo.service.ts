@@ -213,8 +213,8 @@ class KlaviyoService {
                   name: eventName,
                 },
               },
-            },
-            properties: {
+      },
+      properties: {
               ...properties,
               ...(value !== undefined && { value }),
             },
@@ -292,7 +292,7 @@ class KlaviyoService {
               data: {
                 type: 'list',
                 id: listId,
-              },
+      },
             },
           },
         },
@@ -362,7 +362,7 @@ class KlaviyoService {
                 id: listId,
               },
             },
-          },
+              },
         },
       };
 
@@ -388,7 +388,7 @@ class KlaviyoService {
     try {
       // Import User model here to avoid circular dependencies
       const { User } = await import('../models');
-      
+
       const user = await User.findById(userId);
       if (!user || !user.email) {
         logger.warn(`Cannot grant free entries: user ${userId} not found or has no email`);

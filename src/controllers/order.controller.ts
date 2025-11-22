@@ -333,14 +333,14 @@ export const createOrder = async (
       ticketsReserved.length > 0
     ) {
       // Verify provided reserved tickets exist and are still reserved
-      const reservedTickets = await Ticket.find({
-        competitionId,
-        ticketNumber: { $in: ticketsReserved },
-        status: TicketStatus.RESERVED,
+    const reservedTickets = await Ticket.find({
+      competitionId,
+      ticketNumber: { $in: ticketsReserved },
+      status: TicketStatus.RESERVED,
         reservedUntil: { $gt: now },
-      });
+    });
 
-      if (reservedTickets.length !== qty) {
+    if (reservedTickets.length !== qty) {
         // Get detailed information about what happened to the tickets
         const allTickets = await Ticket.find({
           competitionId,
@@ -531,9 +531,9 @@ export const createOrder = async (
     const paypalOrder = await paypalService.createOrder({
       amount: amount, // Amount in decimal
       currency: 'GBP',
-      orderId: orderId,
+        orderId: orderId,
       userId: req.user?._id?.toString() || 'guest',
-      competitionId: competitionId,
+        competitionId: competitionId,
       returnUrl: `${config.frontendUrl}/payment/success?orderId=${orderId}`,
       cancelUrl: `${config.frontendUrl}/payment/cancel?orderId=${orderId}`,
     });
