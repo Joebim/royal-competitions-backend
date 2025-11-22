@@ -3,6 +3,7 @@
 ## 🎯 Overview
 
 The referral system is **fully implemented in the backend**. The frontend just needs to:
+
 1. Include `referralCode` in registration requests
 2. Display user's referral code in their dashboard
 3. Handle referral links from URLs
@@ -16,6 +17,7 @@ The referral system is **fully implemented in the backend**. The frontend just n
 ### 1. **Registration with Referral Code**
 
 Include the `referralCode` field in the registration request. The referral code can come from:
+
 - URL query parameter (`?ref=CODE`)
 - Manual input from user
 - Shared referral link
@@ -50,6 +52,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -60,7 +63,7 @@ Content-Type: application/json
       "firstName": "Jane",
       "lastName": "Doe",
       "email": "jane@example.com",
-      "referralCode": "JANDOEAB", // ← User's new referral code
+      "referralCode": "JANDOEAB" // ← User's new referral code
       // ... other user fields
     },
     "token": "...",
@@ -72,11 +75,12 @@ Content-Type: application/json
 ### 2. **Get User Profile** (to display referral code)
 
 ```typescript
-GET /api/v1/users/me
-Authorization: Bearer <token>
+GET / api / v1 / users / me;
+Authorization: Bearer<token>;
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -86,7 +90,7 @@ Authorization: Bearer <token>
       "firstName": "Jane",
       "lastName": "Doe",
       "email": "jane@example.com",
-      "referralCode": "JANDOEAB", // ← User's referral code
+      "referralCode": "JANDOEAB" // ← User's referral code
       // ... other user fields
     }
   }
@@ -108,10 +112,10 @@ const referralCode = urlParams.get('ref');
 
 // Auto-populate in registration form
 <RegistrationForm>
-  <input 
-    type="text" 
-    name="referralCode" 
-    value={referralCode || ''} 
+  <input
+    type="text"
+    name="referralCode"
+    value={referralCode || ''}
     placeholder="Referral code (optional)"
   />
 </RegistrationForm>
@@ -124,6 +128,7 @@ https://yoursite.com/register?ref=JOHDOEAB
 ```
 
 **UI Flow:**
+
 ```
 [Referral Landing Page]
 ├── Hero Section
@@ -181,8 +186,8 @@ function RegistrationPage() {
   const referralCode = searchParams.get('ref');
 
   return (
-    <RegistrationForm 
-      initialReferralCode={referralCode || ''} 
+    <RegistrationForm
+      initialReferralCode={referralCode || ''}
     />
   );
 }
@@ -201,11 +206,11 @@ import { useNavigate } from 'react-router-dom';
 
 function ShareReferralButton({ referralCode }: { referralCode: string }) {
   const navigate = useNavigate();
-  
+
   const handleShare = () => {
     navigate(`/register?ref=${referralCode}`);
   };
-  
+
   return <button onClick={handleShare}>Share Referral Link</button>;
 }
 ```
@@ -244,7 +249,7 @@ export const RegistrationForm: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     try {
       const response = await fetch('/api/v1/auth/register', {
         method: 'POST',
@@ -255,7 +260,7 @@ export const RegistrationForm: React.FC = () => {
       });
 
       const data = await response.json();
-      
+
       if (data.success) {
         // Registration successful
         // User's referral code is in data.data.user.referralCode
@@ -276,7 +281,7 @@ export const RegistrationForm: React.FC = () => {
         onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
         required
       />
-      
+
       <input
         type="text"
         placeholder="Last Name"
@@ -284,7 +289,7 @@ export const RegistrationForm: React.FC = () => {
         onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
         required
       />
-      
+
       <input
         type="email"
         placeholder="Email"
@@ -292,7 +297,7 @@ export const RegistrationForm: React.FC = () => {
         onChange={(e) => setFormData({ ...formData, email: e.target.value })}
         required
       />
-      
+
       <input
         type="password"
         placeholder="Password"
@@ -300,7 +305,7 @@ export const RegistrationForm: React.FC = () => {
         onChange={(e) => setFormData({ ...formData, password: e.target.value })}
         required
       />
-      
+
       {/* Referral Code Input */}
       {formData.referralCode && (
         <div className="referral-code-section">
@@ -315,7 +320,7 @@ export const RegistrationForm: React.FC = () => {
           <small>You were referred by a friend!</small>
         </div>
       )}
-      
+
       <label>
         <input
           type="checkbox"
@@ -324,7 +329,7 @@ export const RegistrationForm: React.FC = () => {
         />
         Subscribe to newsletter
       </label>
-      
+
       <button type="submit">Register</button>
     </form>
   );
@@ -359,7 +364,7 @@ export const ReferralSection: React.FC = () => {
       .then(data => setUser(data.data.user));
   }, []);
 
-  const referralLink = user?.referralCode 
+  const referralLink = user?.referralCode
     ? `${window.location.origin}/register?ref=${user.referralCode}`
     : '';
 
@@ -395,12 +400,12 @@ export const ReferralSection: React.FC = () => {
   return (
     <div className="referral-section">
       <h2>Invite Friends & Earn Rewards</h2>
-      
+
       <div className="referral-code-card">
         <label>Your Referral Code</label>
         <div className="code-display">
           <span className="code">{user.referralCode}</span>
-          <button 
+          <button
             onClick={() => copyToClipboard(user.referralCode!)}
             className="copy-btn"
           >
@@ -412,13 +417,13 @@ export const ReferralSection: React.FC = () => {
       <div className="referral-link-card">
         <label>Your Referral Link</label>
         <div className="link-display">
-          <input 
-            type="text" 
-            value={referralLink} 
-            readOnly 
+          <input
+            type="text"
+            value={referralLink}
+            readOnly
             className="referral-link-input"
           />
-          <button 
+          <button
             onClick={() => copyToClipboard(referralLink)}
             className="copy-btn"
           >
@@ -457,6 +462,7 @@ export const ReferralSection: React.FC = () => {
 ## 🎯 Implementation Checklist
 
 ### Registration Flow
+
 - [ ] Parse `?ref=CODE` from URL query parameters
 - [ ] Auto-populate referral code field in registration form
 - [ ] Allow user to edit/remove referral code if needed
@@ -465,6 +471,7 @@ export const ReferralSection: React.FC = () => {
 - [ ] Handle invalid referral codes gracefully (don't break registration)
 
 ### User Dashboard
+
 - [ ] Fetch user profile to get `referralCode`
 - [ ] Display user's referral code prominently
 - [ ] Generate referral link: `https://yoursite.com/register?ref={referralCode}`
@@ -474,6 +481,7 @@ export const ReferralSection: React.FC = () => {
 - [ ] Show referral stats (if available from backend)
 
 ### Referral Link Handling
+
 - [ ] Create referral landing page or update registration page
 - [ ] Parse referral code from URL on page load
 - [ ] Show special message if referral code is present
@@ -485,6 +493,7 @@ export const ReferralSection: React.FC = () => {
 ## 🎨 UI/UX Best Practices
 
 ### 1. **Referral Code Input**
+
 - ✅ Make it optional (don't require it)
 - ✅ Show helpful placeholder: "e.g., JOHDOEAB"
 - ✅ Auto-uppercase the input (referral codes are uppercase)
@@ -493,6 +502,7 @@ export const ReferralSection: React.FC = () => {
 - ✅ Don't show error if code is invalid (just log it, registration still succeeds)
 
 ### 2. **Referral Dashboard Section**
+
 - ✅ Make it prominent and easy to find
 - ✅ Use clear, benefit-focused copy
 - ✅ Show referral code in large, easy-to-copy format
@@ -501,12 +511,14 @@ export const ReferralSection: React.FC = () => {
 - ✅ Use visual elements (icons, badges) to make it engaging
 
 ### 3. **Referral Links**
+
 - ✅ Make links short and shareable
 - ✅ Use consistent format: `yoursite.com/register?ref=CODE`
 - ✅ Consider creating a dedicated referral landing page
 - ✅ Add UTM parameters for tracking (optional): `?ref=CODE&utm_source=referral`
 
 ### 4. **Success Messages**
+
 - ✅ After registration with referral: "Thanks for signing up! Your referral code has been applied."
 - ✅ After copying code: "Referral code copied to clipboard!"
 - ✅ After sharing: "Link copied! Share it with your friends."
@@ -526,9 +538,12 @@ const validateReferralCode = (code: string): boolean => {
 
 // Usage in form
 const handleReferralCodeChange = (value: string) => {
-  const upperValue = value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+  const upperValue = value
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 8);
   setFormData({ ...formData, referralCode: upperValue });
-  
+
   if (upperValue.length === 8) {
     const isValid = validateReferralCode(upperValue);
     // Show validation feedback
@@ -559,7 +574,9 @@ try {
 
   // Success - referral code was applied if provided
   if (formData.referralCode) {
-    showSuccessMessage('Registration successful! Your referral code has been applied.');
+    showSuccessMessage(
+      'Registration successful! Your referral code has been applied.'
+    );
   }
 } catch (error) {
   // Handle network or other errors
@@ -572,6 +589,7 @@ try {
 ## 📱 Mobile Considerations
 
 ### Responsive Design
+
 - ✅ Make referral code input easily tappable on mobile
 - ✅ Use large, readable font for referral code display
 - ✅ Make copy buttons large enough for touch targets (min 44x44px)
@@ -583,7 +601,7 @@ try {
 ```typescript
 const shareReferralLink = async () => {
   const referralLink = `${window.location.origin}/register?ref=${user.referralCode}`;
-  
+
   if (navigator.share) {
     // Use native share on mobile
     try {
@@ -608,6 +626,7 @@ const shareReferralLink = async () => {
 ## 🧪 Testing Checklist
 
 ### Registration with Referral Code
+
 - [ ] User can register with referral code from URL (`?ref=CODE`)
 - [ ] User can register with manually entered referral code
 - [ ] User can register without referral code
@@ -617,6 +636,7 @@ const shareReferralLink = async () => {
 - [ ] Referral code is trimmed of whitespace
 
 ### User Dashboard
+
 - [ ] User's referral code displays correctly
 - [ ] Copy code button works
 - [ ] Copy link button works
@@ -625,6 +645,7 @@ const shareReferralLink = async () => {
 - [ ] Mobile share works (if implemented)
 
 ### Referral Links
+
 - [ ] Referral links redirect correctly
 - [ ] Referral code is parsed from URL
 - [ ] Registration form pre-fills with referral code
@@ -680,21 +701,27 @@ const link = `${window.location.origin}/register?ref=${user.data.user.referralCo
 ## ❓ FAQ
 
 ### Q: What happens if a user enters an invalid referral code?
+
 **A:** Registration still succeeds, but a warning is logged. The user just won't be linked to a referrer.
 
 ### Q: Can users see how many people they've referred?
+
 **A:** Not yet, but you can add this by creating an endpoint that counts users with `referredBy: userId`.
 
 ### Q: Can users change their referral code?
+
 **A:** No, referral codes are auto-generated and permanent. This prevents confusion and abuse.
 
 ### Q: What's the format of referral codes?
+
 **A:** 8 alphanumeric characters, uppercase (e.g., "JOHDOEAB").
 
 ### Q: Can I customize the referral code format?
+
 **A:** Yes, but you'd need to modify the backend `User.model.ts` pre-save hook.
 
 ### Q: How do I track referral performance?
+
 **A:** Check Klaviyo dashboard for "Referred Friend" events, or query the database for users with `referredBy` field set.
 
 ---
@@ -709,10 +736,10 @@ const link = `${window.location.origin}/register?ref=${user.data.user.referralCo
 4. ✅ Generate and share referral links
 
 **That's it!** The backend handles:
+
 - Referral code generation
 - Referral validation
 - "Referred Friend" event tracking
 - Free entry rewards (10 entries when referred user makes first paid entry)
 
 No complex logic needed on the frontend - just pass the referral code and display it! 🎉
-

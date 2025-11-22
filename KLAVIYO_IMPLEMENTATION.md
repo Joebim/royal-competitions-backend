@@ -44,6 +44,7 @@ Complete service with all required functions:
 - ✅ `grantFreeEntriesAndTrack(userId, entries, source)` - Grants free entries and tracks event
 
 **Features:**
+
 - Automatic retry logic for 429 (rate limit) and 5xx errors
 - Exponential backoff retry strategy
 - Comprehensive error handling (never fails main operations)
@@ -55,14 +56,13 @@ Complete service with all required functions:
 
 - **Started Checkout** - When `createPayPalOrder` is called with an existing order
   - Properties: `competition_id`, `competition_name`, `order_id`, `items`, `value`
-  
 - **Placed Order** - When payment is successfully captured
   - Properties: `competition_id`, `competition_name`, `order_id`, `order_number`, `items`, `value`
-  
 - **Paid Competition Entry** - When payment is successfully captured
   - Properties: `competition_id`, `competition_name`, `order_id`, `ticket_numbers`, `quantity`, `value`
 
 **Additional Actions:**
+
 - Subscribes to email list if `marketingOptIn === true`
 - Subscribes to SMS list if phone provided and `marketingOptIn === true`
 - Updates/identifies profile in Klaviyo
@@ -107,6 +107,7 @@ Complete service with all required functions:
 **Implementation:** MongoDB-based cron job (runs every 5 minutes)
 
 **Logic:**
+
 - Finds orders with:
   - `paymentStatus === PENDING`
   - `status === PENDING`
@@ -121,6 +122,7 @@ Complete service with all required functions:
 All events include GDPR-safe properties (no unnecessary PII):
 
 ### Started Checkout / Placed Order
+
 ```typescript
 {
   competition_id: string,
@@ -138,6 +140,7 @@ All events include GDPR-safe properties (no unnecessary PII):
 ```
 
 ### Won Competition
+
 ```typescript
 {
   competition_id: string,
@@ -149,6 +152,7 @@ All events include GDPR-safe properties (no unnecessary PII):
 ```
 
 ### Abandoned Checkout
+
 ```typescript
 {
   competition_id: string,
@@ -163,10 +167,12 @@ All events include GDPR-safe properties (no unnecessary PII):
 ## Testing with Postman MCP
 
 All Klaviyo API calls can be tested using your Postman collection:
+
 - **Collection:** "Klaviyo API (Previous Stable) (v2025-01-15)"
 - **Workspace:** "Joltagon"
 
 **Test Endpoints:**
+
 1. Create Profile - `/profiles/` (POST)
 2. Create Event - `/events/` (POST)
 3. Create Metric - `/metrics/` (POST)
@@ -206,7 +212,7 @@ All Klaviyo API calls can be tested using your Postman collection:
 ✅ **Every paid checkout** → Fires "Started Checkout" → "Abandoned Checkout" if not completed  
 ✅ **Every winner** → Triggers instant "Won Competition" event  
 ✅ **Every referral/newsletter signup** → Grants and tracks free entries  
-✅ **Marketing opt-in** → Automatic email/SMS list subscription  
+✅ **Marketing opt-in** → Automatic email/SMS list subscription
 
 ## Notes
 
@@ -216,4 +222,3 @@ All Klaviyo API calls can be tested using your Postman collection:
 - Custom metrics are auto-created on first use
 - All events include proper timestamps
 - UK/GDPR compliant (minimal PII, only necessary data)
-

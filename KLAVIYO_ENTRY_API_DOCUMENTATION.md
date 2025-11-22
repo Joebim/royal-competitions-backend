@@ -3,6 +3,7 @@
 ## 🎯 Overview
 
 This document provides complete API documentation for the Competition Entry endpoints. These endpoints allow users to:
+
 - Start an entry process (tracks "Started Competition Entry" in Klaviyo)
 - Submit an entry with their answer (tracks "Submitted Competition Entry" in Klaviyo)
 - View their entries for a competition
@@ -34,17 +35,20 @@ Authorization: Bearer <your_jwt_token>
 Tracks "Started Competition Entry" event in Klaviyo when user begins the entry process.
 
 #### Endpoint
+
 ```
 POST /api/v1/entries/start
 ```
 
 #### Headers
+
 ```
 Content-Type: application/json
 Authorization: Bearer <token>
 ```
 
 #### Request Body
+
 ```typescript
 {
   competitionId: string;      // Required - Competition ID
@@ -54,12 +58,13 @@ Authorization: Bearer <token>
 ```
 
 #### Example Request
+
 ```typescript
 const response = await fetch('/api/v1/entries/start', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`,
+    Authorization: `Bearer ${token}`,
   },
   body: JSON.stringify({
     competitionId: '507f1f77bcf86cd799439011',
@@ -70,6 +75,7 @@ const response = await fetch('/api/v1/entries/start', {
 ```
 
 #### Success Response (200 OK)
+
 ```json
 {
   "success": true,
@@ -85,6 +91,7 @@ const response = await fetch('/api/v1/entries/start', {
 ```
 
 #### Response Fields
+
 - `competitionId` - The competition ID
 - `competitionName` - The competition title
 - `hasQuestion` - Boolean indicating if competition has a question
@@ -94,6 +101,7 @@ const response = await fetch('/api/v1/entries/start', {
 #### Error Responses
 
 **401 Unauthorized**
+
 ```json
 {
   "success": false,
@@ -103,6 +111,7 @@ const response = await fetch('/api/v1/entries/start', {
 ```
 
 **400 Bad Request** - Missing competitionId
+
 ```json
 {
   "success": false,
@@ -112,6 +121,7 @@ const response = await fetch('/api/v1/entries/start', {
 ```
 
 **404 Not Found** - Competition not found
+
 ```json
 {
   "success": false,
@@ -121,6 +131,7 @@ const response = await fetch('/api/v1/entries/start', {
 ```
 
 **404 Not Found** - Order/Ticket not found or not authorized
+
 ```json
 {
   "success": false,
@@ -132,6 +143,7 @@ const response = await fetch('/api/v1/entries/start', {
 #### When to Call This Endpoint
 
 Call this endpoint when:
+
 - User navigates to the competition entry/question page
 - User clicks "Enter Competition" button
 - User starts viewing the competition question
@@ -172,7 +184,7 @@ export const CompetitionEntryPage: React.FC = () => {
         });
 
         const data = await response.json();
-        
+
         if (data.success) {
           setQuestion(data.data);
           // "Started Competition Entry" event is automatically tracked in Klaviyo
@@ -213,33 +225,37 @@ export const CompetitionEntryPage: React.FC = () => {
 Creates an Entry record and tracks "Submitted Competition Entry" event in Klaviyo.
 
 #### Endpoint
+
 ```
 POST /api/v1/entries/submit
 ```
 
 #### Headers
+
 ```
 Content-Type: application/json
 Authorization: Bearer <token>
 ```
 
 #### Request Body
+
 ```typescript
 {
-  competitionId: string;  // Required - Competition ID
-  orderId: string;        // Required - Order ID
-  ticketNumber: number;   // Required - Ticket number
-  answer: string;         // Required - User's answer to the question
+  competitionId: string; // Required - Competition ID
+  orderId: string; // Required - Order ID
+  ticketNumber: number; // Required - Ticket number
+  answer: string; // Required - User's answer to the question
 }
 ```
 
 #### Example Request
+
 ```typescript
 const response = await fetch('/api/v1/entries/submit', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`,
+    Authorization: `Bearer ${token}`,
   },
   body: JSON.stringify({
     competitionId: '507f1f77bcf86cd799439011',
@@ -251,6 +267,7 @@ const response = await fetch('/api/v1/entries/submit', {
 ```
 
 #### Success Response (200 OK)
+
 ```json
 {
   "success": true,
@@ -271,6 +288,7 @@ const response = await fetch('/api/v1/entries/submit', {
 ```
 
 #### Response Fields
+
 - `entry.id` - The created entry ID
 - `entry.competitionId` - Competition ID
 - `entry.orderId` - Order ID
@@ -283,6 +301,7 @@ const response = await fetch('/api/v1/entries/submit', {
 #### Error Responses
 
 **401 Unauthorized**
+
 ```json
 {
   "success": false,
@@ -292,6 +311,7 @@ const response = await fetch('/api/v1/entries/submit', {
 ```
 
 **400 Bad Request** - Missing required fields
+
 ```json
 {
   "success": false,
@@ -301,6 +321,7 @@ const response = await fetch('/api/v1/entries/submit', {
 ```
 
 **400 Bad Request** - Entry already exists
+
 ```json
 {
   "success": false,
@@ -310,6 +331,7 @@ const response = await fetch('/api/v1/entries/submit', {
 ```
 
 **404 Not Found** - Competition/Order/Ticket not found
+
 ```json
 {
   "success": false,
@@ -321,6 +343,7 @@ const response = await fetch('/api/v1/entries/submit', {
 #### When to Call This Endpoint
 
 Call this endpoint when:
+
 - User submits the answer form
 - User clicks "Submit Entry" button
 - After validating the answer format on frontend (optional)
@@ -350,7 +373,7 @@ export const EntryForm: React.FC<{
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!answer.trim()) {
       alert('Please enter an answer');
       return;
@@ -381,7 +404,7 @@ export const EntryForm: React.FC<{
           isCorrect: data.data.isCorrect,
           message: data.data.message,
         });
-        
+
         // Show success message
         if (data.data.isCorrect) {
           // Answer is correct - show success
@@ -404,7 +427,7 @@ export const EntryForm: React.FC<{
   return (
     <form onSubmit={handleSubmit}>
       <h2>{question}</h2>
-      
+
       {answerOptions ? (
         // Multiple choice
         <div>
@@ -453,22 +476,26 @@ export const EntryForm: React.FC<{
 Retrieves all entries submitted by the authenticated user for a specific competition.
 
 #### Endpoint
+
 ```
 GET /api/v1/entries/competition/:competitionId
 ```
 
 #### Headers
+
 ```
 Authorization: Bearer <token>
 ```
 
 #### Query Parameters
+
 ```
 page?: number    // Optional - Page number (default: 1)
 limit?: number   // Optional - Items per page (default: 20)
 ```
 
 #### Example Request
+
 ```typescript
 const competitionId = '507f1f77bcf86cd799439011';
 const page = 1;
@@ -479,13 +506,14 @@ const response = await fetch(
   {
     method: 'GET',
     headers: {
-      'Authorization': `Bearer ${token}`,
+      Authorization: `Bearer ${token}`,
     },
   }
 );
 ```
 
 #### Success Response (200 OK)
+
 ```json
 {
   "success": true,
@@ -518,6 +546,7 @@ const response = await fetch(
 ```
 
 #### Response Fields
+
 - `entries[]` - Array of entry objects
   - `id` - Entry ID
   - `competitionId` - Competition ID
@@ -532,6 +561,7 @@ const response = await fetch(
 #### Error Responses
 
 **401 Unauthorized**
+
 ```json
 {
   "success": false,
@@ -541,6 +571,7 @@ const response = await fetch(
 ```
 
 **404 Not Found** - Competition not found
+
 ```json
 {
   "success": false,
@@ -552,6 +583,7 @@ const response = await fetch(
 #### When to Call This Endpoint
 
 Call this endpoint when:
+
 - User views "My Entries" page
 - User wants to see their entry history for a competition
 - Displaying entry status in user dashboard
@@ -623,7 +655,7 @@ export const MyEntriesPage: React.FC = () => {
   return (
     <div>
       <h1>My Entries</h1>
-      
+
       {entries.length === 0 ? (
         <p>You haven't submitted any entries for this competition yet.</p>
       ) : (
@@ -679,22 +711,26 @@ export const MyEntriesPage: React.FC = () => {
 Retrieves all entries for a competition. **Admin access required.**
 
 #### Endpoint
+
 ```
 GET /api/v1/entries/admin/competition/:competitionId
 ```
 
 #### Headers
+
 ```
 Authorization: Bearer <admin_token>
 ```
 
 #### Query Parameters
+
 ```
 page?: number    // Optional - Page number (default: 1)
 limit?: number   // Optional - Items per page (default: 50)
 ```
 
 #### Example Request
+
 ```typescript
 const competitionId = '507f1f77bcf86cd799439011';
 
@@ -703,13 +739,14 @@ const response = await fetch(
   {
     method: 'GET',
     headers: {
-      'Authorization': `Bearer ${adminToken}`,
+      Authorization: `Bearer ${adminToken}`,
     },
   }
 );
 ```
 
 #### Success Response (200 OK)
+
 ```json
 {
   "success": true,
@@ -750,6 +787,7 @@ const response = await fetch(
 #### Error Responses
 
 **401 Unauthorized** - Not authenticated
+
 ```json
 {
   "success": false,
@@ -759,6 +797,7 @@ const response = await fetch(
 ```
 
 **403 Forbidden** - Not admin
+
 ```json
 {
   "success": false,
@@ -804,7 +843,7 @@ export const CompleteEntryFlow: React.FC = () => {
         });
 
         const data = await response.json();
-        
+
         if (data.success) {
           setQuestion(data.data);
           setStep('question');
@@ -876,11 +915,11 @@ export const CompleteEntryFlow: React.FC = () => {
   return (
     <form onSubmit={handleSubmit}>
       <h1>{question.competitionName}</h1>
-      
+
       {question.hasQuestion ? (
         <>
           <p className="question">{question.question}</p>
-          
+
           {question.answerOptions ? (
             <div className="multiple-choice">
               {question.answerOptions.map((option: string, index: number) => (
@@ -923,6 +962,7 @@ export const CompleteEntryFlow: React.FC = () => {
 Both entry endpoints automatically track events in Klaviyo:
 
 ### "Started Competition Entry"
+
 - **Triggered by:** `POST /api/v1/entries/start`
 - **Event Properties:**
   - `competition_id`
@@ -931,6 +971,7 @@ Both entry endpoints automatically track events in Klaviyo:
   - `ticket_number` (if provided)
 
 ### "Submitted Competition Entry"
+
 - **Triggered by:** `POST /api/v1/entries/submit`
 - **Event Properties:**
   - `competition_id`
@@ -947,6 +988,7 @@ Both entry endpoints automatically track events in Klaviyo:
 ## 🧪 Testing Checklist
 
 ### Start Entry Endpoint
+
 - [ ] Call endpoint with valid competitionId
 - [ ] Call endpoint with optional orderId and ticketNumber
 - [ ] Verify "Started Competition Entry" event appears in Klaviyo
@@ -954,6 +996,7 @@ Both entry endpoints automatically track events in Klaviyo:
 - [ ] Handle 401 if not authenticated
 
 ### Submit Entry Endpoint
+
 - [ ] Submit entry with correct answer
 - [ ] Submit entry with incorrect answer
 - [ ] Verify "Submitted Competition Entry" event appears in Klaviyo
@@ -963,6 +1006,7 @@ Both entry endpoints automatically track events in Klaviyo:
 - [ ] Handle 401 if not authenticated
 
 ### Get Entries Endpoint
+
 - [ ] Fetch user's entries for a competition
 - [ ] Test pagination (page, limit)
 - [ ] Verify entries are filtered by user
@@ -973,21 +1017,27 @@ Both entry endpoints automatically track events in Klaviyo:
 ## ❓ FAQ
 
 ### Q: Do I need to call "start entry" before "submit entry"?
+
 **A:** No, but it's recommended. Calling "start entry" tracks when users begin the process, which is useful for analytics. You can call "submit entry" directly if needed.
 
 ### Q: What happens if a user submits multiple entries for the same ticket?
+
 **A:** The API will return a 400 error: "Entry already submitted for this ticket". Each ticket can only have one entry.
 
 ### Q: Can users see if their answer is correct?
+
 **A:** Yes! The submit endpoint returns `isCorrect` in the response, so you can show immediate feedback.
 
 ### Q: What if the competition doesn't have a question?
+
 **A:** The "start entry" endpoint will return `hasQuestion: false`. You can still submit an entry, but the answer validation will be skipped.
 
 ### Q: How do I get the orderId and ticketNumber?
+
 **A:** These come from the order/ticket system. When a user purchases tickets, they receive an order with ticket numbers. Use those values when submitting entries.
 
 ### Q: Are entries required to win?
+
 **A:** This depends on your competition rules. The backend tracks entries, but the draw system determines winners based on your business logic.
 
 ---
@@ -1001,4 +1051,3 @@ Both entry endpoints automatically track events in Klaviyo:
 3. ✅ Call `GET /api/v1/entries/competition/:id` to show user's entries
 
 **That's it!** All Klaviyo tracking happens automatically in the backend. No frontend Klaviyo code needed! 🎉
-

@@ -65,7 +65,8 @@ POST /api/v1/entries/submit
 }
 ```
 
-**What happens:** 
+**What happens:**
+
 - Entry is created in database
 - "Submitted Competition Entry" event is automatically tracked in Klaviyo ✅
 
@@ -101,23 +102,28 @@ GET /api/v1/entries/competition/:competitionId?page=1&limit=20
 ## 🔐 Admin API - View All Entries
 
 ### Endpoint
+
 ```
 GET /api/v1/entries/admin/competition/:competitionId
 ```
 
 ### Authentication
+
 Requires **admin token** in Authorization header:
+
 ```
 Authorization: Bearer <admin_token>
 ```
 
 ### Query Parameters
+
 ```
 page?: number    // Optional - Page number (default: 1)
 limit?: number   // Optional - Items per page (default: 50)
 ```
 
 ### Example Request
+
 ```typescript
 const competitionId = '507f1f77bcf86cd799439011';
 
@@ -126,13 +132,14 @@ const response = await fetch(
   {
     method: 'GET',
     headers: {
-      'Authorization': `Bearer ${adminToken}`,
+      Authorization: `Bearer ${adminToken}`,
     },
   }
 );
 ```
 
 ### Success Response (200 OK)
+
 ```json
 {
   "success": true,
@@ -171,6 +178,7 @@ const response = await fetch(
 ```
 
 ### Response Fields
+
 - `entries[]` - Array of all entries for the competition
   - `id` - Entry ID
   - `userId` - User object (firstName, lastName, email)
@@ -186,6 +194,7 @@ const response = await fetch(
 ### Error Responses
 
 **401 Unauthorized**
+
 ```json
 {
   "success": false,
@@ -195,6 +204,7 @@ const response = await fetch(
 ```
 
 **403 Forbidden** - Not admin
+
 ```json
 {
   "success": false,
@@ -204,6 +214,7 @@ const response = await fetch(
 ```
 
 **404 Not Found** - Competition not found
+
 ```json
 {
   "success": false,
@@ -256,7 +267,7 @@ export const AdminEntriesPage: React.FC = () => {
     const fetchEntries = async () => {
       try {
         const adminToken = localStorage.getItem('adminToken'); // or get from auth context
-        
+
         const response = await fetch(
           `/api/v1/entries/admin/competition/${competitionId}?page=${pagination.page}&limit=${pagination.limit}`,
           {
@@ -291,7 +302,7 @@ export const AdminEntriesPage: React.FC = () => {
   return (
     <div className="admin-entries-page">
       <h1>All Entries for Competition</h1>
-      
+
       <div className="entries-table">
         <table>
           <thead>
@@ -339,7 +350,7 @@ export const AdminEntriesPage: React.FC = () => {
             Previous
           </button>
           <span>
-            Page {pagination.page} of {pagination.totalPages} 
+            Page {pagination.page} of {pagination.totalPages}
             ({pagination.totalItems} total entries)
           </span>
           <button
@@ -384,6 +395,7 @@ export const AdminEntriesPage: React.FC = () => {
 ## ✅ Implementation Checklist
 
 ### User Entry Flow
+
 - [ ] Call `POST /api/v1/entries/start` when user views question page
 - [ ] Display question from start response
 - [ ] Call `POST /api/v1/entries/submit` when user submits answer
@@ -391,11 +403,13 @@ export const AdminEntriesPage: React.FC = () => {
 - [ ] Handle errors gracefully (404, 400, 401)
 
 ### User Dashboard (Optional)
+
 - [ ] Call `GET /api/v1/entries/competition/:id` to show user's entries
 - [ ] Display entry history with pagination
 - [ ] Show entry status (correct/incorrect, winner)
 
 ### Admin Dashboard
+
 - [ ] Call `GET /api/v1/entries/admin/competition/:id` to view all entries
 - [ ] Display entries in table/grid format
 - [ ] Show user information, answers, correctness
@@ -407,12 +421,14 @@ export const AdminEntriesPage: React.FC = () => {
 ## 🎨 UI Recommendations
 
 ### Entry Form
+
 - Show question prominently
 - Display answer options clearly (if multiple choice)
 - Show submit button with loading state
 - Display immediate feedback after submission (correct/incorrect)
 
 ### Admin Entries Table
+
 - Sortable columns (user, ticket, answer, date)
 - Filter by correctness (correct/incorrect)
 - Filter by winner status
@@ -429,6 +445,7 @@ export const AdminEntriesPage: React.FC = () => {
 2. **"Submitted Competition Entry"** - When `POST /api/v1/entries/submit` is called
 
 Both events include:
+
 - `competition_id`
 - `competition_name`
 - `order_id` (if provided)
@@ -441,18 +458,23 @@ Both events include:
 ## ❓ FAQ
 
 ### Q: Do I need to call "start" before "submit"?
+
 **A:** No, but it's recommended for better analytics. You can call "submit" directly.
 
 ### Q: What if user submits duplicate entry?
+
 **A:** API returns 400 error: "Entry already submitted for this ticket". Show error message to user.
 
 ### Q: Can I filter admin entries by correctness?
+
 **A:** Not in the API, but you can filter on the frontend using the `isCorrect` field.
 
 ### Q: How do I get orderId and ticketNumber?
+
 **A:** These come from the order/ticket system when user purchases tickets.
 
 ### Q: Are entries required to win?
+
 **A:** Depends on your competition rules. The backend tracks entries, but draw logic determines winners.
 
 ---
@@ -466,4 +488,3 @@ Both events include:
 3. ✅ `GET /api/v1/entries/admin/competition/:id` - Admin: View all entries
 
 **That's it!** All Klaviyo tracking happens automatically. No frontend Klaviyo code needed! 🎉
-
