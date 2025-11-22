@@ -35,11 +35,13 @@ The backend currently provides the following endpoints for winner management:
 You have two options:
 
 **Option 1: Use Admin Endpoint (Quick Solution)**
+
 - Create a frontend endpoint that calls the admin endpoint
 - Requires the winner to be authenticated
 - Less secure but faster to implement
 
 **Option 2: Create New Public Claim Endpoint (Recommended)**
+
 - Backend needs to add a new endpoint: `POST /api/v1/winners/:id/claim`
 - Verifies the claim code
 - Updates the `claimed` status
@@ -52,11 +54,13 @@ You have two options:
 ### 1. Winner Receives Email
 
 When a winner is selected, they receive an email with:
+
 - Competition details
 - Prize information
 - Claim URL: `https://yourdomain.com/winners/{winnerId}/claim?code={claimCode}`
 
 Example URL:
+
 ```
 https://royalcompetitions.com/winners/6922065eaaee4e0b51e2f9ad/claim?code=ABCD-1234
 ```
@@ -64,6 +68,7 @@ https://royalcompetitions.com/winners/6922065eaaee4e0b51e2f9ad/claim?code=ABCD-1
 ### 2. User Clicks Claim Link
 
 The frontend should:
+
 - Extract `winnerId` from URL path
 - Extract `code` from URL query parameters
 - Verify the claim code matches the winner's record
@@ -72,6 +77,7 @@ The frontend should:
 ### 3. User Submits Claim Form
 
 The user should:
+
 - Review their prize details
 - Confirm their contact information
 - Submit the claim
@@ -80,6 +86,7 @@ The user should:
 ### 4. Claim Confirmation
 
 After successful claim:
+
 - Show success message
 - Update UI to show "Claimed" status
 - Provide next steps (e.g., "Our team will contact you within 24 hours")
@@ -97,11 +104,13 @@ After successful claim:
 **Authentication:** Not required (public endpoint)
 
 **Request:**
+
 ```http
 GET /api/v1/winners/6922065eaaee4e0b51e2f9ad
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -148,6 +157,7 @@ GET /api/v1/winners/6922065eaaee4e0b51e2f9ad
 ```
 
 **Usage:**
+
 ```typescript
 // Verify claim code on frontend
 const winner = await fetch(`/api/v1/winners/${winnerId}`);
@@ -171,6 +181,7 @@ if (winnerData.data.winner.claimCode === urlClaimCode) {
 **Authentication:** Required (admin or authenticated user)
 
 **Request:**
+
 ```http
 PUT /api/v1/admin/winners/6922065eaaee4e0b51e2f9ad
 Content-Type: application/json
@@ -182,6 +193,7 @@ Cookie: authToken=...
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -212,6 +224,7 @@ Cookie: authToken=...
 **Authentication:** Not required
 
 **Request:**
+
 ```http
 POST /api/v1/winners/6922065eaaee4e0b51e2f9ad/claim
 Content-Type: application/json
@@ -222,6 +235,7 @@ Content-Type: application/json
 ```
 
 **Response (Success):**
+
 ```json
 {
   "success": true,
@@ -238,6 +252,7 @@ Content-Type: application/json
 ```
 
 **Response (Error - Invalid Code):**
+
 ```json
 {
   "success": false,
@@ -250,6 +265,7 @@ Content-Type: application/json
 ```
 
 **Response (Error - Already Claimed):**
+
 ```json
 {
   "success": false,
@@ -471,13 +487,13 @@ export const ClaimPrizePage = () => {
     <div className="claim-page">
       <div className="claim-form">
         <h1>🎉 Congratulations! You're a Winner!</h1>
-        
+
         <div className="prize-details">
           <h2>{winner.competitionId.title}</h2>
           <div className="prize-image">
             {winner.competitionId.images[0] && (
-              <img 
-                src={winner.competitionId.images[0].url} 
+              <img
+                src={winner.competitionId.images[0].url}
                 alt={winner.competitionId.title}
               />
             )}
@@ -500,8 +516,8 @@ export const ClaimPrizePage = () => {
         )}
 
         <div className="claim-actions">
-          <button 
-            onClick={handleClaim} 
+          <button
+            onClick={handleClaim}
             disabled={claiming}
             className="claim-button"
           >
@@ -529,7 +545,8 @@ export const ClaimPrizePage = () => {
 
 ```typescript
 // services/winner.service.ts
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api/v1';
+const API_BASE_URL =
+  process.env.REACT_APP_API_URL || 'http://localhost:5000/api/v1';
 
 export const winnerService = {
   /**
@@ -612,6 +629,7 @@ export const winnerService = {
 ### 1. Claim Page Design
 
 **Visual Elements:**
+
 - Large celebration icon/emoji (🎉)
 - Competition image
 - Prize details prominently displayed
@@ -619,6 +637,7 @@ export const winnerService = {
 - Trust indicators (security badges, verification)
 
 **Layout:**
+
 ```
 ┌─────────────────────────────────────┐
 │         🎉 Congratulations!         │
@@ -645,6 +664,7 @@ export const winnerService = {
 ### 2. Success State
 
 After successful claim:
+
 - Show success animation
 - Display confirmation message
 - Show next steps
@@ -654,16 +674,19 @@ After successful claim:
 ### 3. Error States
 
 **Invalid Claim Code:**
+
 - Clear error message
 - Instructions to use email link
 - Contact support option
 
 **Already Claimed:**
+
 - Show "Already Claimed" status
 - Display claim date
 - Show contact information
 
 **Network Errors:**
+
 - Retry button
 - Contact support option
 
@@ -681,6 +704,7 @@ After successful claim:
 ### Common Error Scenarios
 
 1. **Invalid Winner ID**
+
    ```typescript
    if (!winner) {
      return <ErrorComponent message="Winner not found" />;
@@ -688,6 +712,7 @@ After successful claim:
    ```
 
 2. **Invalid Claim Code**
+
    ```typescript
    if (winner.claimCode !== claimCodeFromUrl) {
      return <ErrorComponent message="Invalid claim code" />;
@@ -695,6 +720,7 @@ After successful claim:
    ```
 
 3. **Already Claimed**
+
    ```typescript
    if (winner.claimed) {
      return <AlreadyClaimedComponent winner={winner} />;
@@ -702,6 +728,7 @@ After successful claim:
    ```
 
 4. **Network Errors**
+
    ```typescript
    try {
      await claimPrize();
@@ -878,6 +905,7 @@ export const claimPrizeSchema = Joi.object({
 ## Summary
 
 ### Current State
+
 - ✅ Backend has winner retrieval endpoints
 - ✅ Backend has admin update endpoint
 - ❌ No public claim endpoint (recommended to add)
@@ -899,6 +927,7 @@ export const claimPrizeSchema = Joi.object({
 ### Quick Start
 
 For a quick implementation, you can:
+
 1. Use the existing `GET /api/v1/winners/:id` endpoint to verify claim codes
 2. Use the existing `PUT /api/v1/admin/winners/:id` endpoint for claiming (requires authentication)
 3. Add the public claim endpoint later for better security
@@ -908,6 +937,7 @@ For a quick implementation, you can:
 ## Support
 
 If you encounter any issues or need clarification, please refer to:
+
 - Backend API documentation
 - Winner model schema
 - Email template service (for claim URL format)
@@ -915,4 +945,3 @@ If you encounter any issues or need clarification, please refer to:
 ---
 
 **Last Updated:** November 22, 2025
-

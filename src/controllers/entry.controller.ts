@@ -340,30 +340,59 @@ export const getCompetitionEntries = async (
       throw new ApiError('Competition not found', 404);
     }
 
+    // Query entries for this competition
+    // Note: Entries are only created when users submit answers to competition questions
+    // If no entries exist, this will return an empty array (which is correct)
     const [entries, total] = await Promise.all([
       Entry.find({ competitionId })
         .populate('userId', 'firstName lastName email')
         .populate('orderId', 'orderNumber amount')
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(pageLimit),
+        .limit(pageLimit)
+        .lean(),
       Entry.countDocuments({ competitionId }),
     ]);
+
+    logger.info(
+      `Admin entries query for competition ${competitionId}: found ${total} entries`
+    );
+
+    // Format entries with proper population
+    const formattedEntries = entries.map((entry: any) => ({
+      id: entry._id,
+      userId: entry.userId
+        ? {
+            id: entry.userId._id,
+            firstName: entry.userId.firstName,
+            lastName: entry.userId.lastName,
+            email: entry.userId.email,
+          }
+        : null,
+      competitionId: entry.competitionId,
+      orderId: entry.orderId
+        ? {
+            id: entry.orderId._id,
+            orderNumber: entry.orderId.orderNumber,
+            amount: entry.orderId.amount,
+          }
+        : null,
+      ticketNumber: entry.ticketNumber,
+      answer: entry.answer,
+      isCorrect: entry.isCorrect,
+      isWinner: entry.isWinner,
+      createdAt: entry.createdAt,
+      updatedAt: entry.updatedAt,
+    }));
 
     res.json(
       ApiResponse.success(
         {
-          entries: entries.map((entry) => ({
-            id: entry._id,
-            userId: entry.userId,
-            competitionId: entry.competitionId,
-            orderId: entry.orderId,
-            ticketNumber: entry.ticketNumber,
-            answer: entry.answer,
-            isCorrect: entry.isCorrect,
-            isWinner: entry.isWinner,
-            createdAt: entry.createdAt,
-          })),
+          competition: {
+            id: competition._id,
+            title: competition.title,
+          },
+          entries: formattedEntries,
         },
         'Entries retrieved successfully',
         {
