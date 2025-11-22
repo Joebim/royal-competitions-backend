@@ -20,6 +20,7 @@ import klaviyoService from '../services/klaviyo.service';
 import emailService from '../services/email.service';
 import { config } from '../config/environment';
 import logger from '../utils/logger';
+import { supportsTransactions } from '../utils/mongoTransaction';
 
 /**
  * Run draw for a competition (admin-triggered)
@@ -864,23 +865,45 @@ export const verifyDraw = async (
 export const runAutomaticDraw = async (
   competitionId: string
 ): Promise<void> => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  // Check if we have a real session (transactions supported)
+  const useSession = async (callback: (session: mongoose.ClientSession) => Promise<void>) => {
+    const hasTransactions = await supportsTransactions();
+    
+    if (hasTransactions) {
+      const session = await mongoose.startSession();
+      session.startTransaction();
+      try {
+        await callback(session);
+        await session.commitTransaction();
+      } catch (error) {
+        await session.abortTransaction();
+        throw error;
+      } finally {
+        session.endSession();
+      }
+    } else {
+      // No transactions - run without session
+      const dummySession = {} as mongoose.ClientSession;
+      await callback(dummySession);
+    }
+  };
 
-  try {
+  await useSession(async (session) => {
+    const isRealSession = session && 'startTransaction' in session;
+
     // Get competition
-    const competition =
-      await Competition.findById(competitionId).session(session);
+    const competition = isRealSession 
+      ? await Competition.findById(competitionId).session(session)
+      : await Competition.findById(competitionId);
+    
     if (!competition) {
       logger.error(`Competition ${competitionId} not found for automatic draw`);
-      await session.abortTransaction();
       return;
     }
 
     // Check if competition should be drawn
     if (competition.status === 'drawn') {
       logger.info(`Competition ${competitionId} already drawn, skipping`);
-      await session.abortTransaction();
       return;
     }
 
@@ -888,13 +911,16 @@ export const runAutomaticDraw = async (
       logger.info(
         `Competition ${competitionId} is not set to automatic draw, skipping`
       );
-      await session.abortTransaction();
       return;
     }
 
     // Close competition
     competition.status = CompetitionStatus.CLOSED;
-    await competition.save({ session });
+    if (isRealSession) {
+      await competition.save({ session });
+    } else {
+      await competition.save();
+    }
 
     // Run draw (1 primary winner, 3 reserves)
     const drawResult = await drawService.runDraw({
@@ -925,7 +951,10 @@ export const runAutomaticDraw = async (
       const isPrimary = i === 0; // First is primary winner
 
       // Get ticket
-      const ticket = await Ticket.findById(result.ticketId).session(session);
+      const ticket = isRealSession
+        ? await Ticket.findById(result.ticketId).session(session)
+        : await Ticket.findById(result.ticketId);
+      
       if (!ticket) {
         logger.warn(`Ticket ${result.ticketId} not found, skipping`);
         continue;
@@ -933,9 +962,14 @@ export const runAutomaticDraw = async (
 
       // Mark ticket as winner
       ticket.status = TicketStatus.WINNER;
-      await ticket.save({ session });
+      if (isRealSession) {
+        await ticket.save({ session });
+      } else {
+        await ticket.save();
+      }
 
       // Create winner record
+      const winnerOptions = isRealSession ? { session } : {};
       const winner = await Winner.create(
         [
           {
@@ -950,7 +984,7 @@ export const runAutomaticDraw = async (
             claimed: false,
           },
         ],
-        { session }
+        winnerOptions
       );
 
       winners.push(winner[0]);
@@ -990,11 +1024,16 @@ export const runAutomaticDraw = async (
 
           winner[0].notified = true;
           winner[0].notifiedAt = new Date();
-          await winner[0].save({ session });
+          if (isRealSession) {
+            await winner[0].save({ session });
+          } else {
+            await winner[0].save();
+          }
         }
       }
 
       // Create event log
+      const eventOptions = isRealSession ? { session } : {};
       await Event.create(
         [
           {
@@ -1010,16 +1049,21 @@ export const runAutomaticDraw = async (
             },
           },
         ],
-        { session }
+        eventOptions
       );
     }
 
     // Update competition status
     competition.status = CompetitionStatus.DRAWN;
     competition.drawnAt = new Date();
-    await competition.save({ session });
+    if (isRealSession) {
+      await competition.save({ session });
+    } else {
+      await competition.save();
+    }
 
     // Create event log
+    const drawEventOptions = isRealSession ? { session } : {};
     await Event.create(
       [
         {
@@ -1034,20 +1078,15 @@ export const runAutomaticDraw = async (
           },
         },
       ],
-      { session }
+      drawEventOptions
     );
 
-    await session.commitTransaction();
-
     logger.info(`Automatic draw completed for competition ${competitionId}`);
-  } catch (error: any) {
-    await session.abortTransaction();
+  }).catch((error: any) => {
     logger.error(
       `Error running automatic draw for competition ${competitionId}:`,
       error
     );
     throw error;
-  } finally {
-    session.endSession();
-  }
+  });
 };
