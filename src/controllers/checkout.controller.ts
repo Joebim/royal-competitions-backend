@@ -135,10 +135,10 @@ export const createCheckoutFromCart = async (
           status: { $in: [TicketStatus.ACTIVE, TicketStatus.WINNER] },
         });
 
-        const availableTickets =
-          competition.ticketLimit !== null
+      const availableTickets =
+        competition.ticketLimit !== null
             ? competition.ticketLimit - activeTicketsCount
-            : Infinity;
+          : Infinity;
 
         const totalAvailable =
           availableTickets === Infinity
@@ -146,11 +146,11 @@ export const createCheckoutFromCart = async (
             : availableTickets - reservedCount;
 
         if (totalAvailable !== Infinity && cartItem.quantity > totalAvailable) {
-          throw new ApiError(
+        throw new ApiError(
             `Only ${totalAvailable} tickets remaining for ${competition.title}. Please remove some items from your cart.`,
-            400
-          );
-        }
+          400
+        );
+      }
 
         // Try to reserve tickets using the improved reservation system
         try {
@@ -266,9 +266,9 @@ export const createCheckoutFromCart = async (
       const paypalOrder = await paypalService.createOrder({
         amount: amount,
         currency: 'GBP',
-        orderId: String(order._id),
+          orderId: String(order._id),
         userId: String(req.user._id),
-        competitionId: String(competition._id),
+          competitionId: String(competition._id),
         returnUrl: `${config.frontendUrl}/payment/success?orderId=${order._id}`,
         cancelUrl: `${config.frontendUrl}/payment/cancel?orderId=${order._id}`,
       });
@@ -432,9 +432,9 @@ export const createCheckoutPaymentIntent = async (
       paypalOrder = await paypalService.createOrder({
         amount: orderAmount,
         currency: 'GBP',
-        orderId: String(order._id),
+          orderId: String(order._id),
         userId: order.userId ? String(order.userId) : 'guest',
-        competitionId: String(order.competitionId),
+          competitionId: String(order.competitionId),
         returnUrl: `${config.frontendUrl}/payment/success?orderId=${order._id}`,
         cancelUrl: `${config.frontendUrl}/payment/cancel?orderId=${order._id}`,
       });

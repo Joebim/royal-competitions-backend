@@ -44,9 +44,9 @@ export const createPayPalOrder = async (
     let order = null;
     if (orderId) {
       order = await Order.findById(orderId);
-      if (!order) {
-        throw new ApiError('Order not found', 404);
-      }
+    if (!order) {
+      throw new ApiError('Order not found', 404);
+    }
 
       // Check authorization if user is authenticated
       if (
@@ -54,8 +54,8 @@ export const createPayPalOrder = async (
         order.userId &&
         order.userId.toString() !== String(req.user._id)
       ) {
-        throw new ApiError('Not authorized', 403);
-      }
+      throw new ApiError('Not authorized', 403);
+    }
     }
 
     // Create PayPal order
@@ -79,16 +79,16 @@ export const createPayPalOrder = async (
     // Update order with PayPal order ID if order exists
     if (order) {
       order.paypalOrderId = paypalOrder.id;
-      await order.save();
+    await order.save();
 
-      // Create payment record
-      await Payment.create({
-        orderId: order._id,
+    // Create payment record
+    await Payment.create({
+      orderId: order._id,
         userId: order.userId || req.user?._id,
         amount: orderAmount,
         paymentIntentId: paypalOrder.id,
-        status: PaymentStatus.PENDING,
-      });
+      status: PaymentStatus.PENDING,
+    });
     }
 
     // Return orderID for frontend PayPal Buttons
@@ -687,7 +687,7 @@ async function handleRefund(refund: any) {
 
     // Update payment
     await Payment.findByIdAndUpdate(payment._id, {
-      status: PaymentStatus.REFUNDED,
+        status: PaymentStatus.REFUNDED,
       refundId: refund.id,
       refundAmount: parseFloat(refund.amount.value), // Amount in decimal
     });

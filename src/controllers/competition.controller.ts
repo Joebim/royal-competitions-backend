@@ -240,15 +240,26 @@ const parseCompetitionPayload = (body: any) => {
   if (originalPrice !== undefined) payload.originalPrice = originalPrice;
 
   // Ticket price in decimal
-  const ticketPrice = parseNumberParam(
-    body.ticketPrice ?? body.ticketPricePence ?? body.price ?? body.ticket_price
-  );
-  if (ticketPrice !== undefined) {
-    // If provided as pence (>= 100), convert to decimal; otherwise use as decimal
-    payload.ticketPrice =
-      ticketPrice >= 100
-        ? Number((ticketPrice / 100).toFixed(2))
-        : Number(ticketPrice.toFixed(2));
+  const ticketPriceInput = body.ticketPrice ?? body.ticketPricePence ?? body.price ?? body.ticket_price;
+  if (ticketPriceInput !== undefined && ticketPriceInput !== null && ticketPriceInput !== '') {
+    // Check if input is a string with decimal point (definitely decimal format)
+    const isDecimalString = typeof ticketPriceInput === 'string' && ticketPriceInput.includes('.');
+    const ticketPrice = parseNumberParam(ticketPriceInput);
+    
+    if (ticketPrice !== undefined) {
+      // If input has decimal point OR value is less than 1, treat as decimal
+      // Otherwise, if >= 100 and is whole number, treat as pence
+      if (isDecimalString || ticketPrice < 1) {
+        // It's already in decimal format (e.g., "0.99", "1.50", "3.99", "0.50")
+        payload.ticketPrice = Number(ticketPrice.toFixed(2));
+      } else if (ticketPrice >= 100 && Math.abs(ticketPrice - Math.round(ticketPrice)) < 0.001) {
+        // It's pence (e.g., 100, 199, 500), convert to decimal
+        payload.ticketPrice = Number((ticketPrice / 100).toFixed(2));
+      } else {
+        // Value between 1 and 100 - assume it's already in decimal format
+        payload.ticketPrice = Number(ticketPrice.toFixed(2));
+      }
+    }
   }
 
   // Ticket limit (null = unlimited)
