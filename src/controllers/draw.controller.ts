@@ -1112,6 +1112,7 @@ export const runAutomaticDraw = async (
             logger.error('Error tracking Won Competition event:', error);
           }
 
+          
           // Send email notification
           try {
             const claimUrl = `${config.frontendUrl}/winners/${winner[0]._id}/claim?code=${winner[0].claimCode}`;
