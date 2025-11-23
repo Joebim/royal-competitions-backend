@@ -9,16 +9,19 @@ This document outlines all winner-related endpoints, distinguishing between publ
 ## Public Endpoints (No Authentication Required)
 
 ### 1. Get All Winners (Public List)
+
 **Endpoint:** `GET /api/v1/winners`
 
 **Description:** Get a paginated list of all winners (public display)
 
 **Query Parameters:**
+
 - `page` (optional): Page number (default: 1)
 - `limit` (optional): Items per page (default: 20)
 - `competitionId` (optional): Filter by competition ID
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -43,11 +46,13 @@ This document outlines all winner-related endpoints, distinguishing between publ
 ---
 
 ### 2. Get Winner by ID
+
 **Endpoint:** `GET /api/v1/winners/:id`
 
 **Description:** Get detailed winner information by ID
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -70,11 +75,13 @@ This document outlines all winner-related endpoints, distinguishing between publ
 ---
 
 ### 3. Claim Prize (Public - No Auth Required)
+
 **Endpoint:** `POST /api/v1/winners/:id/claim`
 
 **Description:** Claim a prize using the claim code from the winner notification email
 
 **Request Body:**
+
 ```json
 {
   "claimCode": "ABCD-1234"
@@ -82,6 +89,7 @@ This document outlines all winner-related endpoints, distinguishing between publ
 ```
 
 **Response (Success):**
+
 ```json
 {
   "success": true,
@@ -101,6 +109,7 @@ This document outlines all winner-related endpoints, distinguishing between publ
 ```
 
 **Response (Error - Invalid Code):**
+
 ```json
 {
   "success": false,
@@ -113,6 +122,7 @@ This document outlines all winner-related endpoints, distinguishing between publ
 ```
 
 **Response (Error - Already Claimed):**
+
 ```json
 {
   "success": false,
@@ -125,6 +135,7 @@ This document outlines all winner-related endpoints, distinguishing between publ
 ```
 
 **Validation:**
+
 - `claimCode` is required
 - Format: `ABCD-1234` (4 uppercase letters/numbers, dash, 4 uppercase letters/numbers)
 - Case-insensitive comparison
@@ -134,6 +145,7 @@ This document outlines all winner-related endpoints, distinguishing between publ
 ## User Endpoints (Authentication Required)
 
 ### 4. Get My Winners
+
 **Endpoint:** `GET /api/v1/winners/my/list`
 
 **Description:** Get all winners for the authenticated user
@@ -141,10 +153,12 @@ This document outlines all winner-related endpoints, distinguishing between publ
 **Authentication:** Required (protected route)
 
 **Query Parameters:**
+
 - `page` (optional): Page number (default: 1)
 - `limit` (optional): Items per page (default: 20)
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -186,6 +200,7 @@ This document outlines all winner-related endpoints, distinguishing between publ
 ## Admin Endpoints (Admin Authentication Required)
 
 ### 5. Get All Winners (Admin)
+
 **Endpoint:** `GET /api/v1/admin/winners`
 
 **Description:** Get all winners with admin filters and full details
@@ -193,6 +208,7 @@ This document outlines all winner-related endpoints, distinguishing between publ
 **Authentication:** Required (admin only)
 
 **Query Parameters:**
+
 - `page` (optional): Page number (default: 1)
 - `limit` (optional): Items per page (default: 20)
 - `competitionId` (optional): Filter by competition ID
@@ -206,6 +222,7 @@ This document outlines all winner-related endpoints, distinguishing between publ
 ---
 
 ### 6. Get Winner by ID (Admin)
+
 **Endpoint:** `GET /api/v1/admin/winners/:id`
 
 **Description:** Get detailed winner information (admin view with all fields)
@@ -217,6 +234,7 @@ This document outlines all winner-related endpoints, distinguishing between publ
 ---
 
 ### 7. Update Winner (Admin)
+
 **Endpoint:** `PUT /api/v1/admin/winners/:id`
 
 **Description:** Update winner details (admin only)
@@ -224,6 +242,7 @@ This document outlines all winner-related endpoints, distinguishing between publ
 **Authentication:** Required (admin only)
 
 **Request Body:**
+
 ```json
 {
   "notified": true,
@@ -243,6 +262,7 @@ This document outlines all winner-related endpoints, distinguishing between publ
 ---
 
 ### 8. Delete Winner (Admin)
+
 **Endpoint:** `DELETE /api/v1/admin/winners/:id`
 
 **Description:** Delete a winner record (admin only)
@@ -257,6 +277,7 @@ This document outlines all winner-related endpoints, distinguishing between publ
 
 **For Claiming Prizes:**
 Use the public claim endpoint (no authentication required):
+
 ```typescript
 // ✅ RECOMMENDED: Public claim endpoint
 async claimPrizeWithCode(winnerId: string, claimCode: string): Promise<Winner> {
@@ -271,6 +292,7 @@ async claimPrizeWithCode(winnerId: string, claimCode: string): Promise<Winner> {
 
 **For Getting User's Winners:**
 Use the authenticated user endpoint:
+
 ```typescript
 // Get user's own winners
 async getMyWinners(page: number = 1, limit: number = 20): Promise<Winner[]> {
@@ -284,6 +306,7 @@ async getMyWinners(page: number = 1, limit: number = 20): Promise<Winner[]> {
 
 **For Viewing Any Winner:**
 Use the public get endpoint:
+
 ```typescript
 // Get winner details (public)
 async getWinner(winnerId: string): Promise<Winner> {
@@ -298,6 +321,7 @@ async getWinner(winnerId: string): Promise<Winner> {
 ### Deprecated Approach
 
 **❌ NOT RECOMMENDED:** Using admin endpoint for claiming (requires authentication):
+
 ```typescript
 // ❌ DEPRECATED: Admin endpoint (requires auth)
 async claimPrize(winnerId: string): Promise<Winner> {
@@ -311,6 +335,7 @@ async claimPrize(winnerId: string): Promise<Winner> {
 ```
 
 **Why not use admin endpoint?**
+
 - Requires user to be logged in
 - Less secure (no claim code verification)
 - Not the intended use case
@@ -320,16 +345,16 @@ async claimPrize(winnerId: string): Promise<Winner> {
 
 ## Endpoint Summary
 
-| Endpoint | Method | Auth | Purpose |
-|----------|--------|------|---------|
-| `/api/v1/winners` | GET | None | Get public winners list |
-| `/api/v1/winners/:id` | GET | None | Get winner details |
-| `/api/v1/winners/:id/claim` | POST | None | **Claim prize (public)** |
-| `/api/v1/winners/my/list` | GET | User | Get user's own winners |
-| `/api/v1/admin/winners` | GET | Admin | Get all winners (admin) |
-| `/api/v1/admin/winners/:id` | GET | Admin | Get winner (admin) |
-| `/api/v1/admin/winners/:id` | PUT | Admin | Update winner (admin) |
-| `/api/v1/admin/winners/:id` | DELETE | Admin | Delete winner (admin) |
+| Endpoint                    | Method | Auth  | Purpose                  |
+| --------------------------- | ------ | ----- | ------------------------ |
+| `/api/v1/winners`           | GET    | None  | Get public winners list  |
+| `/api/v1/winners/:id`       | GET    | None  | Get winner details       |
+| `/api/v1/winners/:id/claim` | POST   | None  | **Claim prize (public)** |
+| `/api/v1/winners/my/list`   | GET    | User  | Get user's own winners   |
+| `/api/v1/admin/winners`     | GET    | Admin | Get all winners (admin)  |
+| `/api/v1/admin/winners/:id` | GET    | Admin | Get winner (admin)       |
+| `/api/v1/admin/winners/:id` | PUT    | Admin | Update winner (admin)    |
+| `/api/v1/admin/winners/:id` | DELETE | Admin | Delete winner (admin)    |
 
 ---
 
@@ -358,19 +383,23 @@ async claimPrize(winnerId: string): Promise<Winner> {
 ### Common Errors
 
 **400 Bad Request:**
+
 - Missing claim code
 - Invalid claim code format
 - Invalid claim code (doesn't match)
 - Prize already claimed
 
 **401 Unauthorized:**
+
 - Missing authentication (for protected routes)
 - Invalid token
 
 **403 Forbidden:**
+
 - User not admin (for admin routes)
 
 **404 Not Found:**
+
 - Winner not found
 
 ---
@@ -378,6 +407,7 @@ async claimPrize(winnerId: string): Promise<Winner> {
 ## Testing Examples
 
 ### Claim Prize (Public)
+
 ```bash
 curl -X POST http://localhost:5000/api/v1/winners/6922477809601ca6c1b2012b/claim \
   -H "Content-Type: application/json" \
@@ -385,12 +415,14 @@ curl -X POST http://localhost:5000/api/v1/winners/6922477809601ca6c1b2012b/claim
 ```
 
 ### Get My Winners (Authenticated)
+
 ```bash
 curl -X GET "http://localhost:5000/api/v1/winners/my/list?page=1&limit=20" \
   -H "Cookie: authToken=..."
 ```
 
 ### Get Winner Details (Public)
+
 ```bash
 curl -X GET http://localhost:5000/api/v1/winners/6922477809601ca6c1b2012b
 ```
@@ -398,4 +430,3 @@ curl -X GET http://localhost:5000/api/v1/winners/6922477809601ca6c1b2012b
 ---
 
 **Last Updated:** November 22, 2025
-
