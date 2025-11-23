@@ -129,6 +129,79 @@ export const getWinner = async (
 };
 
 /**
+ * Get user's own winners (authenticated user)
+ * GET /api/v1/winners/my/list
+ */
+export const getMyWinners = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    if (!req.user) {
+      throw new ApiError('Not authorized', 401);
+    }
+
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 20;
+    const { skip, limit: pageLimit } = getPagination(page, limit);
+
+    const [winners, total] = await Promise.all([
+      Winner.find({ userId: req.user._id })
+        .populate('competitionId', 'title prize images prizeValue')
+        .populate('drawId', 'drawTime drawMethod')
+        .populate('ticketId', 'ticketNumber')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(pageLimit)
+        .lean(),
+      Winner.countDocuments({ userId: req.user._id }),
+    ]);
+
+    // Format winners for user display
+    const formattedWinners = winners.map((winner: any) => ({
+      id: winner._id,
+      competition: {
+        id: winner.competitionId._id,
+        title: winner.competitionId.title,
+        prize: winner.competitionId.prize,
+        prizeValue: winner.competitionId.prizeValue,
+        images: winner.competitionId.images,
+      },
+      ticketNumber: winner.ticketNumber,
+      prize: winner.prize,
+      prizeValue: winner.prizeValue,
+      claimCode: winner.claimCode,
+      drawTime: winner.drawId.drawTime,
+      drawMethod: winner.drawId.drawMethod,
+      notified: winner.notified,
+      claimed: winner.claimed,
+      claimedAt: winner.claimedAt,
+      createdAt: winner.createdAt,
+    }));
+
+    res.json(
+      ApiResponse.success(
+        {
+          winners: formattedWinners,
+        },
+        'My winners retrieved successfully',
+        {
+          pagination: {
+            page,
+            limit: pageLimit,
+            totalItems: total,
+            totalPages: Math.ceil(total / pageLimit) || 1,
+          },
+        }
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Get winners for a competition
  * GET /api/v1/competitions/:id/winners
  */

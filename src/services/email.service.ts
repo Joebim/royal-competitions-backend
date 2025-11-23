@@ -77,7 +77,8 @@ class EmailService {
   ): Promise<void> {
     try {
       // Extract domain from from email for List-Unsubscribe
-      const fromDomain = options.from.split('@')[1] || 'royalcompetitions.co.uk';
+      const fromDomain =
+        options.from.split('@')[1] || 'royalcompetitions.co.uk';
       const unsubscribeUrl = `https://${fromDomain}/unsubscribe?email=${encodeURIComponent(options.to)}`;
 
       const mailOptions: nodemailer.SendMailOptions = {
@@ -91,8 +92,8 @@ class EmailService {
         headers: {
           'X-Mailer': 'Royal Competitions Email Service',
           'X-Priority': '1', // High priority for winner notifications
-          'Importance': 'high',
-          'Precedence': 'bulk',
+          Importance: 'high',
+          Precedence: 'bulk',
           'List-Unsubscribe': `<${unsubscribeUrl}>`,
           'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
           'X-Auto-Response-Suppress': 'All',
