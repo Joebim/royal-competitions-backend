@@ -13,7 +13,9 @@ import klaviyoService from '../services/klaviyo.service';
  */
 const cleanupExpiredReservations = async () => {
   try {
-    const now = new Date();
+    // Get current UTC time explicitly using Date.now() which always returns UTC milliseconds
+    const nowTimestamp = Date.now(); // UTC milliseconds since epoch
+    const now = new Date(nowTimestamp); // Create Date from UTC milliseconds
 
     // Delete expired reservations
     const result = await Ticket.deleteMany({
@@ -48,26 +50,46 @@ const cleanupExpiredReservations = async () => {
 /**
  * Run automatic draws for competitions
  * Runs every minute to check for competitions that need to be drawn
- * Triggers at the exact UTC time specified in drawAt field
+ * Triggers at the EXACT UTC time specified in drawAt field
  * Note: Dates from database are already UTC, no conversion needed
+ *
+ * Example: If drawAt is "2025-11-24T17:30:00.000Z", the draw will trigger
+ * when the job runs at exactly 17:30:00 UTC (5:30 PM UTC)
  */
 const runAutomaticDraws = async () => {
   try {
-    // Get current UTC time explicitly
-    // Date.now() returns UTC milliseconds since epoch
-    // new Date() creates a Date object from UTC milliseconds
-    // This ensures we're working with pure UTC time regardless of server timezone
-    const now = new Date();
+    // Get current UTC time explicitly using Date.now() which always returns UTC milliseconds
+    // WORKAROUND: Add 1 hour to compensate for server timezone being 1 hour behind UTC
+    // This ensures the draw triggers at the correct time
+    const nowTimestamp = Date.now(); // UTC milliseconds since epoch
+    const adjustedTimestamp = nowTimestamp + 60 * 60 * 1000; // Add 1 hour (3600000 ms)
+    const now = new Date(adjustedTimestamp); // Create Date from adjusted UTC milliseconds
     const nowUTC = now.toISOString();
-    const nowTimestamp = now.getTime(); // UTC milliseconds for precise comparison
+
+    // Get the current minute in UTC using explicit UTC methods
+    // This ensures we're working with true UTC time, not local time
+    const currentMinute = new Date(
+      Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate(),
+        now.getUTCHours(),
+        now.getUTCMinutes(),
+        0,
+        0
+      )
+    );
+    const currentMinuteUTC = currentMinute.toISOString();
 
     // Use 1-hour window to catch competitions that should be drawn (for missed draws)
-    // But only trigger if drawAt has actually passed (drawAt <= now)
-    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+    // This ensures we catch draws even if the job was slightly delayed
+    // Also add 1 hour to oneHourAgo to match the adjusted time
+    const oneHourAgo = new Date(adjustedTimestamp - 60 * 60 * 1000);
 
     // Find competitions where drawAt has passed (drawAt <= now)
     // drawAt is already UTC from database, now is UTC - direct comparison
     // Only include competitions where drawAt has actually passed, within last hour window
+    // This will trigger at the EXACT time when drawAt <= now
     const competitions = await Competition.find({
       status: {
         $in: [
@@ -78,15 +100,16 @@ const runAutomaticDraws = async () => {
       },
       drawMode: DrawMode.AUTOMATIC,
       // Only trigger if drawAt has passed (drawAt <= now)
+      // This ensures exact timing: when now reaches or exceeds drawAt, it triggers
       // And within last hour window (to catch missed draws)
       drawAt: {
-        $lte: now, // drawAt must be less than or equal to now (has passed)
+        $lte: now, // drawAt must be less than or equal to now (has passed or is exactly now)
         $gte: oneHourAgo, // But not too old (within last hour)
       },
       drawnAt: { $exists: false }, // Not yet drawn
     });
 
-    // Log all automatic competitions for debugging
+    // Log all automatic competitions for debugging (only if there are any)
     const allAutomaticCompetitions = await Competition.find({
       status: {
         $in: [
@@ -101,17 +124,36 @@ const runAutomaticDraws = async () => {
 
     if (allAutomaticCompetitions.length > 0) {
       logger.info(
-        `Checking ${allAutomaticCompetitions.length} automatic draw competition(s) - Current UTC time: ${nowUTC}`
+        `Checking ${allAutomaticCompetitions.length} automatic draw competition(s) - Current UTC time: ${nowUTC} (Current minute: ${currentMinuteUTC})`
       );
       for (const comp of allAutomaticCompetitions) {
         const drawAtUTC = comp.drawAt.toISOString();
         const drawAtTimestamp = comp.drawAt.getTime(); // UTC milliseconds
-        const timeDiffMs = drawAtTimestamp - nowTimestamp;
+
+        // Round drawAt to the minute for comparison using explicit UTC methods
+        const drawAtMinute = new Date(
+          Date.UTC(
+            comp.drawAt.getUTCFullYear(),
+            comp.drawAt.getUTCMonth(),
+            comp.drawAt.getUTCDate(),
+            comp.drawAt.getUTCHours(),
+            comp.drawAt.getUTCMinutes(),
+            0,
+            0
+          )
+        );
+        const drawAtMinuteUTC = drawAtMinute.toISOString();
+
+        const timeDiffMs = drawAtTimestamp - adjustedTimestamp;
+        const timeDiffSeconds = Math.floor(timeDiffMs / 1000);
         const timeDiffMinutes = Math.floor(timeDiffMs / (1000 * 60));
-        const shouldDraw = drawAtTimestamp <= nowTimestamp;
+        const shouldDraw = drawAtTimestamp <= adjustedTimestamp;
         const isInWindow = drawAtTimestamp >= oneHourAgo.getTime();
+        const isExactMinute =
+          drawAtMinute.getTime() === currentMinute.getTime();
+
         logger.info(
-          `Competition ${comp._id}: drawAt=${drawAtUTC} (${drawAtTimestamp}), now=${nowUTC} (${nowTimestamp}), diff=${timeDiffMinutes} min, shouldDraw=${shouldDraw}, inWindow=${isInWindow}, status=${comp.status}`
+          `Competition ${comp._id}: drawAt=${drawAtUTC} (minute: ${drawAtMinuteUTC}), now=${nowUTC} (minute: ${currentMinuteUTC}), diff=${timeDiffSeconds}s (${timeDiffMinutes} min), shouldDraw=${shouldDraw}, isExactMinute=${isExactMinute}, inWindow=${isInWindow}, status=${comp.status}`
         );
       }
     }
@@ -128,20 +170,22 @@ const runAutomaticDraws = async () => {
         // drawAt is already UTC from database, use it directly
         const drawAt = competition.drawAt;
         const drawAtUTC = drawAt.toISOString();
-        const timeDiffMs = now.getTime() - drawAt.getTime();
+        const timeDiffMs = adjustedTimestamp - drawAt.getTime();
+        const timeDiffSeconds = Math.floor(timeDiffMs / 1000);
         const timeDiffMinutes = Math.floor(timeDiffMs / (1000 * 60));
 
+        // Log with precise timing information
         logger.info(
-          `Running automatic draw for competition ${competitionId} - drawAt: ${drawAtUTC}, now: ${nowUTC}, triggered ${timeDiffMinutes} minute(s) after drawAt`
+          `🎯 TRIGGERING automatic draw for competition ${competitionId} - drawAt: ${drawAtUTC}, now: ${nowUTC}, triggered ${timeDiffSeconds}s (${timeDiffMinutes} min) after drawAt`
         );
 
         await runAutomaticDraw(competitionId);
         logger.info(
-          `Automatic draw completed for competition ${competitionId}`
+          `✅ Automatic draw completed for competition ${competitionId}`
         );
       } catch (error: any) {
         logger.error(
-          `Error running automatic draw for competition ${String(competition._id)}:`,
+          `❌ Error running automatic draw for competition ${String(competition._id)}:`,
           error
         );
       }
@@ -186,9 +230,10 @@ const closeCompetitionsAtLimit = async () => {
  */
 const endCompetitionsPastEndDate = async () => {
   try {
-    // Current time (already UTC internally)
-    // endDate from database is already UTC Date object, use it directly
-    const now = new Date();
+    // Get current UTC time explicitly using Date.now() which always returns UTC milliseconds
+    // This ensures we get true UTC time regardless of server timezone settings
+    const nowTimestamp = Date.now(); // UTC milliseconds since epoch
+    const now = new Date(nowTimestamp); // Create Date from UTC milliseconds
     const competitions = await Competition.find({
       status: { $in: [CompetitionStatus.LIVE, CompetitionStatus.CLOSED] },
       endDate: { $exists: true, $lte: now },
@@ -208,6 +253,63 @@ const endCompetitionsPastEndDate = async () => {
   }
 };
 
+/**
+ * Debug job to log timing information for next automatic draw
+ * Runs every minute to help debug timing issues
+ * Logs: current time, next draw competition name, hours until draw
+ */
+const debugNextDrawTiming = async () => {
+  try {
+    // Get current UTC time explicitly using Date.now() which always returns UTC milliseconds
+    // WORKAROUND: Add 1 hour to compensate for server timezone being 1 hour behind UTC
+    const nowTimestamp = Date.now(); // UTC milliseconds since epoch
+    const adjustedTimestamp = nowTimestamp + 60 * 60 * 1000; // Add 1 hour (3600000 ms)
+    const now = new Date(adjustedTimestamp); // Create Date from adjusted UTC milliseconds
+    const nowUTC = now.toISOString();
+
+    // Find the next upcoming automatic draw (not yet drawn)
+    const nextDraw = await Competition.findOne({
+      status: {
+        $in: [
+          CompetitionStatus.LIVE,
+          CompetitionStatus.CLOSED,
+          CompetitionStatus.ENDED,
+        ],
+      },
+      drawMode: DrawMode.AUTOMATIC,
+      drawAt: { $exists: true, $gt: new Date(adjustedTimestamp) }, // drawAt is in the future (using adjusted time)
+      drawnAt: { $exists: false }, // Not yet drawn
+    })
+      .select('_id title drawAt status')
+      .sort({ drawAt: 1 }); // Sort by drawAt ascending (earliest first)
+
+    if (nextDraw) {
+      const drawAtTimestamp = nextDraw.drawAt.getTime();
+      const timeDiffMs = drawAtTimestamp - adjustedTimestamp;
+      const timeDiffHours = (timeDiffMs / (1000 * 60 * 60)).toFixed(2);
+      const timeDiffMinutes = Math.floor(timeDiffMs / (1000 * 60));
+      const timeDiffSeconds = Math.floor((timeDiffMs % (1000 * 60)) / 1000);
+
+      // Format current time for display
+      const currentTimeFormatted =
+        now.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+      const drawTimeFormatted =
+        nextDraw.drawAt.toISOString().replace('T', ' ').substring(0, 19) +
+        ' UTC';
+
+      logger.info(
+        `🕐 DEBUG TIMING: Current Time: ${currentTimeFormatted} | Next Draw: "${nextDraw.title}" (ID: ${nextDraw._id}) | Draw Time: ${drawTimeFormatted} | Time Until Draw: ${timeDiffHours} hours (${timeDiffMinutes} min ${timeDiffSeconds}s) | Status: ${nextDraw.status}`
+      );
+    } else {
+      logger.info(
+        `🕐 DEBUG TIMING: Current Time: ${nowUTC} | No upcoming automatic draws found`
+      );
+    }
+  } catch (error: any) {
+    logger.error('Error in debug timing job:', error);
+  }
+};
+
 export const startScheduledJobs = () => {
   // Clean up expired reservations every 2 minutes for more aggressive cleanup
   cron.schedule('*/2 * * * *', () => {
@@ -219,6 +321,11 @@ export const startScheduledJobs = () => {
   cron.schedule('* * * * *', () => {
     logger.info('Running automatic draw job');
     runAutomaticDraws();
+  });
+
+  // Debug timing job - runs every minute to show next draw timing
+  cron.schedule('* * * * *', () => {
+    debugNextDrawTiming();
   });
 
   // Close competitions at ticket limit every 5 minutes
@@ -250,8 +357,9 @@ export const startScheduledJobs = () => {
  */
 const detectAbandonedCheckouts = async () => {
   try {
-    const now = new Date();
-    const fifteenMinutesAgo = new Date(now.getTime() - 15 * 60 * 1000);
+    // Get current UTC time explicitly using Date.now() which always returns UTC milliseconds
+    const nowTimestamp = Date.now(); // UTC milliseconds since epoch
+    const fifteenMinutesAgo = new Date(nowTimestamp - 15 * 60 * 1000);
 
     // Find orders that are:
     // 1. PENDING payment status

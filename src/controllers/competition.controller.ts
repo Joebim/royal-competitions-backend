@@ -15,6 +15,7 @@ import cloudinaryService from '../services/cloudinary.service';
 import { getPagination } from '../utils/pagination';
 import { slugify } from '../utils/slugify';
 import { parseDateToUTC } from '../utils/dateUtils';
+import logger from '../utils/logger';
 
 type CompetitionFilters = FilterQuery<ICompetition>;
 type SortQuery = Record<string, SortOrder>;
@@ -746,6 +747,25 @@ export const updateCompetition = async (
     if (payload.question === null) {
       updateQuery.$unset = { question: 1 };
       delete updateQuery.question;
+    }
+
+    // Reset drawnAt if drawAt is being updated to a future date
+    // This allows the competition to be drawn again at the new time
+    if (payload.drawAt) {
+      const newDrawAt = new Date(payload.drawAt);
+      const now = new Date();
+      
+      // If the new drawAt is in the future, reset drawnAt
+      if (newDrawAt > now) {
+        // Use $unset to remove the drawnAt field if it exists
+        if (!updateQuery.$unset) {
+          updateQuery.$unset = {};
+        }
+        updateQuery.$unset.drawnAt = 1;
+        logger.info(
+          `Resetting drawnAt for competition ${req.params.id} - drawAt moved to future: ${newDrawAt.toISOString()}`
+        );
+      }
     }
 
     const competition = await Competition.findByIdAndUpdate(
