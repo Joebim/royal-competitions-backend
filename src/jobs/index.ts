@@ -14,7 +14,7 @@ import klaviyoService from '../services/klaviyo.service';
 const cleanupExpiredReservations = async () => {
   try {
     const now = new Date();
-    
+
     // Delete expired reservations
     const result = await Ticket.deleteMany({
       status: TicketStatus.RESERVED,
@@ -36,7 +36,9 @@ const cleanupExpiredReservations = async () => {
     });
 
     if (oldReservations.deletedCount > 0) {
-      logger.info(`Cleaned up ${oldReservations.deletedCount} old reservations (safety net)`);
+      logger.info(
+        `Cleaned up ${oldReservations.deletedCount} old reservations (safety net)`
+      );
     }
   } catch (error: any) {
     logger.error('Error cleaning up expired reservations:', error);
@@ -46,26 +48,97 @@ const cleanupExpiredReservations = async () => {
 /**
  * Run automatic draws for competitions
  * Runs every minute to check for competitions that need to be drawn
+ * Triggers at the exact UTC time specified in drawAt field
+ * Note: Dates from database are already UTC, no conversion needed
  */
 const runAutomaticDraws = async () => {
   try {
+    // Get current UTC time explicitly
+    // Date.now() returns UTC milliseconds since epoch
+    // new Date() creates a Date object from UTC milliseconds
+    // This ensures we're working with pure UTC time regardless of server timezone
     const now = new Date();
-    // Find competitions that should be drawn now (within the last minute to account for job timing)
-    const oneMinuteAgo = new Date(now.getTime() - 60 * 1000);
+    const nowUTC = now.toISOString();
+    const nowTimestamp = now.getTime(); // UTC milliseconds for precise comparison
 
+    // Use 1-hour window to catch competitions that should be drawn (for missed draws)
+    // But only trigger if drawAt has actually passed (drawAt <= now)
+    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+
+    // Find competitions where drawAt has passed (drawAt <= now)
+    // drawAt is already UTC from database, now is UTC - direct comparison
+    // Only include competitions where drawAt has actually passed, within last hour window
     const competitions = await Competition.find({
-      status: { $in: [CompetitionStatus.LIVE, CompetitionStatus.CLOSED, CompetitionStatus.ENDED] },
+      status: {
+        $in: [
+          CompetitionStatus.LIVE,
+          CompetitionStatus.CLOSED,
+          CompetitionStatus.ENDED,
+        ],
+      },
       drawMode: DrawMode.AUTOMATIC,
-      drawAt: { $lte: now, $gte: oneMinuteAgo },
+      // Only trigger if drawAt has passed (drawAt <= now)
+      // And within last hour window (to catch missed draws)
+      drawAt: {
+        $lte: now, // drawAt must be less than or equal to now (has passed)
+        $gte: oneHourAgo, // But not too old (within last hour)
+      },
       drawnAt: { $exists: false }, // Not yet drawn
     });
+
+    // Log all automatic competitions for debugging
+    const allAutomaticCompetitions = await Competition.find({
+      status: {
+        $in: [
+          CompetitionStatus.LIVE,
+          CompetitionStatus.CLOSED,
+          CompetitionStatus.ENDED,
+        ],
+      },
+      drawMode: DrawMode.AUTOMATIC,
+      drawnAt: { $exists: false },
+    }).select('_id drawAt status');
+
+    if (allAutomaticCompetitions.length > 0) {
+      logger.info(
+        `Checking ${allAutomaticCompetitions.length} automatic draw competition(s) - Current UTC time: ${nowUTC}`
+      );
+      for (const comp of allAutomaticCompetitions) {
+        const drawAtUTC = comp.drawAt.toISOString();
+        const drawAtTimestamp = comp.drawAt.getTime(); // UTC milliseconds
+        const timeDiffMs = drawAtTimestamp - nowTimestamp;
+        const timeDiffMinutes = Math.floor(timeDiffMs / (1000 * 60));
+        const shouldDraw = drawAtTimestamp <= nowTimestamp;
+        const isInWindow = drawAtTimestamp >= oneHourAgo.getTime();
+        logger.info(
+          `Competition ${comp._id}: drawAt=${drawAtUTC} (${drawAtTimestamp}), now=${nowUTC} (${nowTimestamp}), diff=${timeDiffMinutes} min, shouldDraw=${shouldDraw}, inWindow=${isInWindow}, status=${comp.status}`
+        );
+      }
+    }
+
+    if (competitions.length > 0) {
+      logger.info(
+        `Found ${competitions.length} competition(s) ready for automatic draw`
+      );
+    }
 
     for (const competition of competitions) {
       try {
         const competitionId = String(competition._id);
-        logger.info(`Running automatic draw for competition ${competitionId}`);
+        // drawAt is already UTC from database, use it directly
+        const drawAt = competition.drawAt;
+        const drawAtUTC = drawAt.toISOString();
+        const timeDiffMs = now.getTime() - drawAt.getTime();
+        const timeDiffMinutes = Math.floor(timeDiffMs / (1000 * 60));
+
+        logger.info(
+          `Running automatic draw for competition ${competitionId} - drawAt: ${drawAtUTC}, now: ${nowUTC}, triggered ${timeDiffMinutes} minute(s) after drawAt`
+        );
+
         await runAutomaticDraw(competitionId);
-        logger.info(`Automatic draw completed for competition ${competitionId}`);
+        logger.info(
+          `Automatic draw completed for competition ${competitionId}`
+        );
       } catch (error: any) {
         logger.error(
           `Error running automatic draw for competition ${String(competition._id)}:`,
@@ -90,10 +163,15 @@ const closeCompetitionsAtLimit = async () => {
     });
 
     for (const competition of competitions) {
-      if (competition.ticketLimit !== null && competition.ticketsSold >= competition.ticketLimit) {
+      if (
+        competition.ticketLimit !== null &&
+        competition.ticketsSold >= competition.ticketLimit
+      ) {
         competition.status = CompetitionStatus.CLOSED;
         await competition.save();
-        logger.info(`Closed competition ${competition._id} - ticket limit reached`);
+        logger.info(
+          `Closed competition ${competition._id} - ticket limit reached`
+        );
       }
     }
   } catch (error: any) {
@@ -104,9 +182,12 @@ const closeCompetitionsAtLimit = async () => {
 /**
  * End competitions that have passed their endDate
  * Runs every 5 minutes
+ * Note: endDate from database is already UTC, use it directly without conversion
  */
 const endCompetitionsPastEndDate = async () => {
   try {
+    // Current time (already UTC internally)
+    // endDate from database is already UTC Date object, use it directly
     const now = new Date();
     const competitions = await Competition.find({
       status: { $in: [CompetitionStatus.LIVE, CompetitionStatus.CLOSED] },
@@ -114,6 +195,7 @@ const endCompetitionsPastEndDate = async () => {
     });
 
     for (const competition of competitions) {
+      // endDate is already UTC from database, direct comparison
       if (competition.endDate && competition.endDate <= now) {
         competition.status = CompetitionStatus.ENDED;
         competition.isActive = false;
@@ -221,9 +303,14 @@ const detectAbandonedCheckouts = async () => {
         );
 
         trackedCount++;
-        logger.info(`Tracked abandoned checkout for order ${order.orderNumber} (${email})`);
+        logger.info(
+          `Tracked abandoned checkout for order ${order.orderNumber} (${email})`
+        );
       } catch (error: any) {
-        logger.error(`Error tracking abandoned checkout for order ${order._id}:`, error);
+        logger.error(
+          `Error tracking abandoned checkout for order ${order._id}:`,
+          error
+        );
         // Continue with next order
       }
     }
@@ -235,7 +322,3 @@ const detectAbandonedCheckouts = async () => {
     logger.error('Error detecting abandoned checkouts:', error);
   }
 };
-
-
-
-

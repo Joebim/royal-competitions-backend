@@ -235,6 +235,76 @@ class CloudinaryService {
       throw new ApiError('Failed to fetch resources', 500);
     }
   }
+
+  /**
+   * Get all resources from Cloudinary with pagination
+   * @param options - Pagination and filtering options
+   * @returns Array of resources with metadata
+   */
+  async getAllResources(options?: {
+    folder?: string;
+    resourceType?: 'image' | 'video' | 'raw';
+    maxResults?: number;
+    nextCursor?: string;
+  }) {
+    try {
+      const {
+        folder = config.cloudinary.folder,
+        resourceType = 'image',
+        maxResults = 50,
+        nextCursor,
+      } = options || {};
+
+      const params: any = {
+        type: 'upload',
+        resource_type: resourceType,
+        max_results: maxResults,
+      };
+
+      if (folder) {
+        params.prefix = folder;
+      }
+
+      if (nextCursor) {
+        params.next_cursor = nextCursor;
+      }
+
+      const result = await cloudinary.api.resources(params);
+
+      // Format resources for frontend
+      const resources = result.resources.map((resource: any) => ({
+        publicId: resource.public_id,
+        url: resource.secure_url,
+        format: resource.format,
+        width: resource.width,
+        height: resource.height,
+        bytes: resource.bytes,
+        createdAt: resource.created_at,
+        folder: resource.folder,
+        resourceType: resource.resource_type,
+        // Generate thumbnail for images
+        thumbnail:
+          resource.resource_type === 'image'
+            ? cloudinary.url(resource.public_id, {
+                width: 400,
+                height: 400,
+                crop: 'fill',
+                quality: 'auto',
+                fetch_format: 'auto',
+              })
+            : undefined,
+      }));
+
+      return {
+        resources,
+        nextCursor: result.next_cursor || null,
+        totalCount: result.total_count || resources.length,
+      };
+    } catch (error) {
+      logger.error('Error fetching all resources:', error);
+      throw new ApiError('Failed to fetch resources', 500);
+    }
+  }
 }
 
 export default new CloudinaryService();

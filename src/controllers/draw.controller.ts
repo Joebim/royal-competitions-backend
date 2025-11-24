@@ -46,80 +46,407 @@ export const runDraw = async (
   res: Response,
   next: NextFunction
 ) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  // Check if we have a real session (transactions supported)
+  const useSession = async (
+    callback: (session: mongoose.ClientSession) => Promise<void>
+  ) => {
+    const hasTransactions = await supportsTransactions();
+
+    if (hasTransactions) {
+      const session = await mongoose.startSession();
+      session.startTransaction();
+      try {
+        await callback(session);
+        await session.commitTransaction();
+      } catch (error) {
+        await session.abortTransaction();
+        throw error;
+      } finally {
+        session.endSession();
+      }
+    } else {
+      // No transactions - run without session
+      const dummySession = {} as mongoose.ClientSession;
+      await callback(dummySession);
+    }
+  };
 
   try {
     if (!req.user) {
       throw new ApiError('Not authorized', 401);
     }
 
+    const userId = String(req.user._id);
     const competitionId = req.params.id;
     const { numWinners = 1, reserveWinners = 3, liveUrl, urlType } = req.body;
 
-    // Get competition
-    const competition =
-      await Competition.findById(competitionId).session(session);
-    if (!competition) {
-      throw new ApiError('Competition not found', 404);
-    }
+    await useSession(async (session) => {
+      const isRealSession = session && 'startTransaction' in session;
 
-    // Check if competition can be drawn
-    if (competition.status === 'drawn') {
-      throw new ApiError('Competition has already been drawn', 400);
-    }
+      // Get competition
+      const competition = isRealSession
+        ? await Competition.findById(competitionId).session(session)
+        : await Competition.findById(competitionId);
+      if (!competition) {
+        throw new ApiError('Competition not found', 404);
+      }
 
-    if (competition.status !== 'closed' && competition.status !== 'live') {
-      throw new ApiError('Competition must be closed or live to draw', 400);
-    }
+      // Check if competition can be drawn
+      if (competition.status === 'drawn') {
+        throw new ApiError('Competition has already been drawn', 400);
+      }
 
-    // Close competition if still live
-    if (competition.status === 'live') {
-      competition.status = CompetitionStatus.CLOSED;
-      await competition.save({ session });
-    }
+      if (competition.status !== 'closed' && competition.status !== 'live') {
+        throw new ApiError('Competition must be closed or live to draw', 400);
+      }
 
-    // Run draw
-    const totalWinners = numWinners + reserveWinners;
-    const drawResult = await drawService.runDraw({
-      competitionId,
-      numWinners: totalWinners,
+      // Close competition if still live
+      if (competition.status === 'live') {
+        competition.status = CompetitionStatus.CLOSED;
+        if (isRealSession) {
+          await competition.save({ session });
+        } else {
+          await competition.save();
+        }
+      }
+
+      // Run draw
+      const totalWinners = numWinners + reserveWinners;
+      const drawResult = await drawService.runDraw({
+        competitionId,
+        numWinners: totalWinners,
+      });
+
+      const { results, snapshot, seed } = drawResult;
+
+      // Create draw record
+      const draw = await drawService.createDrawRecord(
+        competitionId,
+        seed,
+        results,
+        snapshot,
+        DrawMethod.ADMIN_TRIGGERED,
+        userId,
+        req.body.notes,
+        undefined, // evidenceUrl (not used for admin-triggered)
+        liveUrl,
+        urlType
+      );
+
+      // Create winners (primary + reserves)
+      const winners = [];
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        const isPrimary = i < numWinners;
+
+        // Get ticket
+        const ticket = isRealSession
+          ? await Ticket.findById(result.ticketId).session(session)
+          : await Ticket.findById(result.ticketId);
+        if (!ticket) {
+          logger.warn(`Ticket ${result.ticketId} not found, skipping`);
+          continue;
+        }
+
+        // Mark ticket as winner
+        ticket.status = TicketStatus.WINNER;
+        if (isRealSession) {
+          await ticket.save({ session });
+        } else {
+          await ticket.save();
+        }
+
+        // Create winner record
+        const winnerOptions = isRealSession ? { session } : {};
+        const winner = await Winner.create(
+          [
+            {
+              drawId: draw._id,
+              competitionId,
+              ticketId: ticket._id,
+              userId: ticket.userId,
+              ticketNumber: ticket.ticketNumber,
+              prize: competition.prize,
+              prizeValue: competition.prizeValue,
+              notified: false,
+              claimed: false,
+              claimCode: generateClaimCode(),
+            },
+          ],
+          winnerOptions
+        );
+
+        winners.push(winner[0]);
+
+        // Notify primary winners
+        if (isPrimary && ticket.userId) {
+          const user = await User.findById(ticket.userId);
+          if (user && user.email) {
+            // Track "Won Competition" event in Klaviyo
+            try {
+              // Determine prize type
+              let prizeType = 'other';
+              const prizeLower = competition.prize.toLowerCase();
+              if (
+                prizeLower.includes('cash') ||
+                prizeLower.includes('£') ||
+                prizeLower.includes('money')
+              ) {
+                prizeType = 'cash';
+              } else if (
+                prizeLower.includes('car') ||
+                prizeLower.includes('vehicle')
+              ) {
+                prizeType = 'car';
+              } else if (
+                prizeLower.includes('holiday') ||
+                prizeLower.includes('trip') ||
+                prizeLower.includes('vacation')
+              ) {
+                prizeType = 'holiday';
+              }
+
+              await klaviyoService.trackEvent(
+                user.email,
+                'Won Competition',
+                {
+                  competition_id: String(competition._id),
+                  competition_name: competition.title,
+                  ticket_number: ticket.ticketNumber,
+                  claim_code: winner[0].claimCode,
+                  prize_type: prizeType,
+                },
+                competition.prizeValue || competition.cashAlternative || 0
+              );
+            } catch (error: any) {
+              logger.error('Error tracking Won Competition event:', error);
+            }
+
+            // Send email notification
+            try {
+              const claimUrl = `${config.frontendUrl}/winners/${winner[0]._id}/claim?code=${winner[0].claimCode}`;
+              await emailService.sendWinnerNotificationEmail({
+                email: user.email,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                competitionTitle: competition.title,
+                ticketNumber: ticket.ticketNumber,
+                prize: competition.prize,
+                drawDate: draw.createdAt.toISOString(),
+                claimUrl,
+              });
+              logger.info(`Winner notification email sent to ${user.email}`);
+            } catch (error: any) {
+              logger.error('Error sending winner notification email:', error);
+            }
+
+            // Mark as notified
+            winner[0].notified = true;
+            winner[0].notifiedAt = new Date();
+            if (isRealSession) {
+              await winner[0].save({ session });
+            } else {
+              await winner[0].save();
+            }
+          }
+        }
+
+        // Create event log
+        const eventOptions = isRealSession ? { session } : {};
+        await Event.create(
+          [
+            {
+              type: EventType.WINNER_SELECTED,
+              entity: 'winner',
+              entityId: winner[0]._id,
+              userId: ticket.userId,
+              competitionId,
+              payload: {
+                ticketNumber: ticket.ticketNumber,
+                isPrimary,
+                drawId: draw._id.toString(),
+              },
+            },
+          ],
+          eventOptions
+        );
+      }
+
+      // Update competition status
+      competition.status = CompetitionStatus.DRAWN;
+      competition.drawnAt = new Date();
+      if (isRealSession) {
+        await competition.save({ session });
+      } else {
+        await competition.save();
+      }
+
+      // Create event log
+      const drawEventOptions = isRealSession ? { session } : {};
+      await Event.create(
+        [
+          {
+            type: EventType.DRAW_CREATED,
+            entity: 'draw',
+            entityId: draw._id,
+            competitionId,
+            payload: {
+              drawMethod: DrawMethod.ADMIN_TRIGGERED,
+              numWinners,
+              reserveWinners,
+              seed,
+              algorithm: 'hmac-sha256-v1',
+            },
+          },
+        ],
+        drawEventOptions
+      );
+
+      res.json(
+        ApiResponse.success(
+          {
+            draw: {
+              id: draw._id,
+              competitionId,
+              drawTime: draw.drawTime,
+              seed: draw.seed,
+              algorithm: draw.algorithm,
+              snapshotTicketCount: draw.snapshotTicketCount,
+              result: draw.result,
+              winners: winners.map((w) => ({
+                id: w._id,
+                ticketNumber: w.ticketNumber,
+                claimCode: w.claimCode,
+                notified: w.notified,
+              })),
+            },
+          },
+          'Draw completed successfully'
+        )
+      );
     });
+  } catch (error: any) {
+    logger.error('Error running draw:', error);
+    next(error);
+  }
+};
 
-    const { results, snapshot, seed } = drawResult;
+/**
+ * Manual winner entry
+ * POST /api/v1/admin/competitions/:id/add-winner
+ */
+export const addManualWinner = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  // Check if we have a real session (transactions supported)
+  const useSession = async (
+    callback: (session: mongoose.ClientSession) => Promise<void>
+  ) => {
+    const hasTransactions = await supportsTransactions();
 
-    // Create draw record
-    const draw = await drawService.createDrawRecord(
-      competitionId,
-      seed,
-      results,
-      snapshot,
-      DrawMethod.ADMIN_TRIGGERED,
-      String(req.user._id),
-      req.body.notes,
-      undefined, // evidenceUrl (not used for admin-triggered)
-      liveUrl,
-      urlType
-    );
+    if (hasTransactions) {
+      const session = await mongoose.startSession();
+      session.startTransaction();
+      try {
+        await callback(session);
+        await session.commitTransaction();
+      } catch (error) {
+        await session.abortTransaction();
+        throw error;
+      } finally {
+        session.endSession();
+      }
+    } else {
+      // No transactions - run without session
+      const dummySession = {} as mongoose.ClientSession;
+      await callback(dummySession);
+    }
+  };
 
-    // Create winners (primary + reserves)
-    const winners = [];
-    for (let i = 0; i < results.length; i++) {
-      const result = results[i];
-      const isPrimary = i < numWinners;
+  try {
+    if (!req.user) {
+      throw new ApiError('Not authorized', 401);
+    }
+
+    const adminUserId = String(req.user._id);
+    const competitionId = req.params.id;
+    const { ticketNumber, notes, evidenceUrl, liveUrl, urlType } = req.body;
+
+    if (!ticketNumber) {
+      throw new ApiError('Ticket number is required', 400);
+    }
+
+    await useSession(async (session) => {
+      const isRealSession = session && 'startTransaction' in session;
+
+      // Get competition
+      const competition = isRealSession
+        ? await Competition.findById(competitionId).session(session)
+        : await Competition.findById(competitionId);
+      if (!competition) {
+        throw new ApiError('Competition not found', 404);
+      }
 
       // Get ticket
-      const ticket = await Ticket.findById(result.ticketId).session(session);
+      const ticket = isRealSession
+        ? await Ticket.findOne({
+            competitionId,
+            ticketNumber,
+            status: TicketStatus.ACTIVE,
+          }).session(session)
+        : await Ticket.findOne({
+            competitionId,
+            ticketNumber,
+            status: TicketStatus.ACTIVE,
+          });
+
       if (!ticket) {
-        logger.warn(`Ticket ${result.ticketId} not found, skipping`);
-        continue;
+        throw new ApiError('Ticket not found', 404);
       }
+
+      // Create snapshot for manual draw (single ticket)
+      const snapshot = [
+        {
+          ticketNumber,
+          ticketId: String(ticket._id),
+          userId: ticket.userId?.toString(),
+        },
+      ];
+
+      // Create draw record (manual)
+      const ticketId = ticket._id as mongoose.Types.ObjectId;
+      const userId = ticket.userId as mongoose.Types.ObjectId | undefined;
+      const draw = await drawService.createDrawRecord(
+        competitionId,
+        drawService.generateSeed(),
+        [
+          {
+            ticketNumber,
+            ticketId,
+            userId,
+          },
+        ],
+        snapshot,
+        DrawMethod.MANUAL,
+        adminUserId,
+        notes,
+        evidenceUrl,
+        liveUrl,
+        urlType
+      );
 
       // Mark ticket as winner
       ticket.status = TicketStatus.WINNER;
-      await ticket.save({ session });
+      if (isRealSession) {
+        await ticket.save({ session });
+      } else {
+        await ticket.save();
+      }
 
       // Create winner record
+      const winnerOptions = isRealSession ? { session } : {};
       const winner = await Winner.create(
         [
           {
@@ -127,21 +454,20 @@ export const runDraw = async (
             competitionId,
             ticketId: ticket._id,
             userId: ticket.userId,
-            ticketNumber: ticket.ticketNumber,
+            ticketNumber,
             prize: competition.prize,
             prizeValue: competition.prizeValue,
             notified: false,
             claimed: false,
             claimCode: generateClaimCode(),
+            drawVideoUrl: evidenceUrl,
           },
         ],
-        { session }
+        winnerOptions
       );
 
-      winners.push(winner[0]);
-
-      // Notify primary winners
-      if (isPrimary && ticket.userId) {
+      // Notify winner if user exists
+      if (ticket.userId) {
         const user = await User.findById(ticket.userId);
         if (user && user.email) {
           // Track "Won Competition" event in Klaviyo
@@ -174,7 +500,7 @@ export const runDraw = async (
               {
                 competition_id: String(competition._id),
                 competition_name: competition.title,
-                ticket_number: ticket.ticketNumber,
+                ticket_number: ticketNumber,
                 claim_code: winner[0].claimCode,
                 prize_type: prizeType,
               },
@@ -187,31 +513,71 @@ export const runDraw = async (
           // Send email notification
           try {
             const claimUrl = `${config.frontendUrl}/winners/${winner[0]._id}/claim?code=${winner[0].claimCode}`;
+            logger.info(
+              `Attempting to send email to ${user.email} with claim URL: ${claimUrl}`
+            );
             await emailService.sendWinnerNotificationEmail({
               email: user.email,
               firstName: user.firstName,
               lastName: user.lastName,
               competitionTitle: competition.title,
-              ticketNumber: ticket.ticketNumber,
+              ticketNumber: ticketNumber,
               prize: competition.prize,
               drawDate: draw.createdAt.toISOString(),
               claimUrl,
             });
-            logger.info(`Winner notification email sent to ${user.email}`);
+            logger.info(
+              `✅ Winner notification email successfully sent to ${user.email}`
+            );
           } catch (error: any) {
-            logger.error('Error sending winner notification email:', error);
+            logger.error(
+              `❌ Error sending winner notification email to ${user.email}:`,
+              error
+            );
+            logger.error('Email error details:', {
+              message: error.message,
+              stack: error.stack,
+              email: user.email,
+              competitionId,
+            });
+            // Don't fail the draw if email fails
           }
 
-          // Mark as notified
           winner[0].notified = true;
           winner[0].notifiedAt = new Date();
-          await winner[0].save({ session });
+          if (isRealSession) {
+            await winner[0].save({ session });
+          } else {
+            await winner[0].save();
+          }
         }
       }
 
-      // Create event log
+      // Update competition status
+      competition.status = CompetitionStatus.DRAWN;
+      competition.drawnAt = new Date();
+      if (isRealSession) {
+        await competition.save({ session });
+      } else {
+        await competition.save();
+      }
+
+      // Create event logs
+      const eventOptions = isRealSession ? { session } : {};
       await Event.create(
         [
+          {
+            type: EventType.DRAW_CREATED,
+            entity: 'draw',
+            entityId: draw._id,
+            competitionId,
+            payload: {
+              drawMethod: DrawMethod.MANUAL,
+              ticketNumber,
+              notes,
+              evidenceUrl,
+            },
+          },
           {
             type: EventType.WINNER_SELECTED,
             entity: 'winner',
@@ -219,283 +585,37 @@ export const runDraw = async (
             userId: ticket.userId,
             competitionId,
             payload: {
-              ticketNumber: ticket.ticketNumber,
-              isPrimary,
+              ticketNumber,
               drawId: draw._id.toString(),
             },
           },
         ],
-        { session }
+        eventOptions
       );
-    }
 
-    // Update competition status
-    competition.status = CompetitionStatus.DRAWN;
-    competition.drawnAt = new Date();
-    await competition.save({ session });
-
-    // Create event log
-    await Event.create(
-      [
-        {
-          type: EventType.DRAW_CREATED,
-          entity: 'draw',
-          entityId: draw._id,
-          competitionId,
-          payload: {
-            drawMethod: DrawMethod.ADMIN_TRIGGERED,
-            numWinners,
-            reserveWinners,
-            seed,
-            algorithm: 'hmac-sha256-v1',
-          },
-        },
-      ],
-      { session }
-    );
-
-    await session.commitTransaction();
-
-    res.json(
-      ApiResponse.success(
-        {
-          draw: {
-            id: draw._id,
-            competitionId,
-            drawTime: draw.drawTime,
-            seed: draw.seed,
-            algorithm: draw.algorithm,
-            snapshotTicketCount: draw.snapshotTicketCount,
-            result: draw.result,
-            winners: winners.map((w) => ({
-              id: w._id,
-              ticketNumber: w.ticketNumber,
-              claimCode: w.claimCode,
-              notified: w.notified,
-            })),
-          },
-        },
-        'Draw completed successfully'
-      )
-    );
-  } catch (error: any) {
-    await session.abortTransaction();
-    logger.error('Error running draw:', error);
-    next(error);
-  } finally {
-    session.endSession();
-  }
-};
-
-/**
- * Manual winner entry
- * POST /api/v1/admin/competitions/:id/add-winner
- */
-export const addManualWinner = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
-  try {
-    if (!req.user) {
-      throw new ApiError('Not authorized', 401);
-    }
-
-    const competitionId = req.params.id;
-    const { ticketNumber, notes, evidenceUrl, liveUrl, urlType } = req.body;
-
-    if (!ticketNumber) {
-      throw new ApiError('Ticket number is required', 400);
-    }
-
-    // Get competition
-    const competition =
-      await Competition.findById(competitionId).session(session);
-    if (!competition) {
-      throw new ApiError('Competition not found', 404);
-    }
-
-    // Get ticket
-    const ticket = await Ticket.findOne({
-      competitionId,
-      ticketNumber,
-      status: TicketStatus.ACTIVE,
-    }).session(session);
-
-    if (!ticket) {
-      throw new ApiError('Ticket not found', 404);
-    }
-
-    // Create snapshot for manual draw (single ticket)
-    const snapshot = [
-      {
-        ticketNumber,
-        ticketId: String(ticket._id),
-        userId: ticket.userId?.toString(),
-      },
-    ];
-
-    // Create draw record (manual)
-    const ticketId = ticket._id as mongoose.Types.ObjectId;
-    const userId = ticket.userId as mongoose.Types.ObjectId | undefined;
-    const draw = await drawService.createDrawRecord(
-      competitionId,
-      drawService.generateSeed(),
-      [
-        {
-          ticketNumber,
-          ticketId,
-          userId,
-        },
-      ],
-      snapshot,
-      DrawMethod.MANUAL,
-      String(req.user._id),
-      notes,
-      evidenceUrl,
-      liveUrl,
-      urlType
-    );
-
-    // Mark ticket as winner
-    ticket.status = TicketStatus.WINNER;
-    await ticket.save({ session });
-
-    // Create winner record
-    const winner = await Winner.create(
-      [
-        {
-          drawId: draw._id,
-          competitionId,
-          ticketId: ticket._id,
-          userId: ticket.userId,
-          ticketNumber,
-          prize: competition.prize,
-          prizeValue: competition.prizeValue,
-          notified: false,
-          claimed: false,
-          claimCode: generateClaimCode(),
-          drawVideoUrl: evidenceUrl,
-        },
-      ],
-      { session }
-    );
-
-    // Notify winner if user exists
-    if (ticket.userId) {
-      const user = await User.findById(ticket.userId);
-      if (user && user.email) {
-        // Track "Won Competition" event in Klaviyo
-        try {
-          // Determine prize type
-          let prizeType = 'other';
-          const prizeLower = competition.prize.toLowerCase();
-          if (
-            prizeLower.includes('cash') ||
-            prizeLower.includes('£') ||
-            prizeLower.includes('money')
-          ) {
-            prizeType = 'cash';
-          } else if (
-            prizeLower.includes('car') ||
-            prizeLower.includes('vehicle')
-          ) {
-            prizeType = 'car';
-          } else if (
-            prizeLower.includes('holiday') ||
-            prizeLower.includes('trip') ||
-            prizeLower.includes('vacation')
-          ) {
-            prizeType = 'holiday';
-          }
-
-          await klaviyoService.trackEvent(
-            user.email,
-            'Won Competition',
-            {
-              competition_id: String(competition._id),
-              competition_name: competition.title,
-              ticket_number: ticketNumber,
-              claim_code: winner[0].claimCode,
-              prize_type: prizeType,
+      res.json(
+        ApiResponse.success(
+          {
+            draw: {
+              id: draw._id,
+              competitionId,
+              drawTime: draw.drawTime,
+              drawMethod: draw.drawMethod,
+              result: draw.result,
             },
-            competition.prizeValue || competition.cashAlternative || 0
-          );
-        } catch (error: any) {
-          logger.error('Error tracking Won Competition event:', error);
-        }
-
-        winner[0].notified = true;
-        winner[0].notifiedAt = new Date();
-        await winner[0].save({ session });
-      }
-    }
-
-    // Update competition status
-    competition.status = CompetitionStatus.DRAWN;
-    competition.drawnAt = new Date();
-    await competition.save({ session });
-
-    // Create event logs
-    await Event.create(
-      [
-        {
-          type: EventType.DRAW_CREATED,
-          entity: 'draw',
-          entityId: draw._id,
-          competitionId,
-          payload: {
-            drawMethod: DrawMethod.MANUAL,
-            ticketNumber,
-            notes,
-            evidenceUrl,
+            winner: {
+              id: winner[0]._id,
+              ticketNumber,
+              claimCode: winner[0].claimCode,
+            },
           },
-        },
-        {
-          type: EventType.WINNER_SELECTED,
-          entity: 'winner',
-          entityId: winner[0]._id,
-          userId: ticket.userId,
-          competitionId,
-          payload: {
-            ticketNumber,
-            drawId: draw._id.toString(),
-          },
-        },
-      ],
-      { session }
-    );
-
-    await session.commitTransaction();
-
-    res.json(
-      ApiResponse.success(
-        {
-          draw: {
-            id: draw._id,
-            competitionId,
-            drawTime: draw.drawTime,
-            drawMethod: draw.drawMethod,
-            result: draw.result,
-          },
-          winner: {
-            id: winner[0]._id,
-            ticketNumber,
-            claimCode: winner[0].claimCode,
-          },
-        },
-        'Manual winner added successfully'
-      )
-    );
+          'Manual winner added successfully'
+        )
+      );
+    });
   } catch (error: any) {
-    await session.abortTransaction();
     logger.error('Error adding manual winner:', error);
     next(error);
-  } finally {
-    session.endSession();
   }
 };
 

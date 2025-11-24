@@ -117,6 +117,12 @@ import {
   deleteWinnerForAdmin,
 } from '../controllers/winner.controller';
 import { updateWinnerSchema } from '../validators/winner.validator';
+import {
+  getAllUploads,
+  uploadImage,
+  uploadMultipleImages,
+  deleteImage,
+} from '../controllers/upload.controller';
 
 const router = Router();
 
@@ -265,5 +271,13 @@ router.get('/winners', getAllWinnersForAdmin);
 router.get('/winners/:id', getWinnerByIdForAdmin);
 router.put('/winners/:id', validate(updateWinnerSchema), updateWinnerForAdmin);
 router.delete('/winners/:id', deleteWinnerForAdmin);
+
+// Upload management
+router.get('/upload/list', getAllUploads);
+router.post('/upload/image', upload.single('image'), uploadImage);
+router.post('/upload/images', upload.array('images', 10), uploadMultipleImages);
+// Use catch-all route to handle publicId with slashes (e.g., "royal-competitions/image123")
+// The publicId will be in req.params[0] for catch-all routes
+router.delete('/upload/image/*', deleteImage);
 
 export default router;
