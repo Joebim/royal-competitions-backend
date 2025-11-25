@@ -754,7 +754,7 @@ export const updateCompetition = async (
     if (payload.drawAt) {
       const newDrawAt = new Date(payload.drawAt);
       const now = new Date();
-      
+
       // If the new drawAt is in the future, reset drawnAt
       if (newDrawAt > now) {
         // Use $unset to remove the drawnAt field if it exists
