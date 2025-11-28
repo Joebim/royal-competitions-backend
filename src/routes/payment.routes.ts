@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import {
-  createPayPalOrder,
-  capturePayment,
+  createSquarePayment,
   confirmPayment,
   handleWebhook,
   fixOrderTickets,
@@ -10,13 +9,12 @@ import { protect, adminOnly } from '../middleware/auth.middleware';
 
 const router = Router();
 
-// Webhook route (no auth required - PayPal webhook)
+// Webhook route (no auth required - Square webhook)
 router.post('/webhook', handleWebhook);
 
-// PayPal payment routes
-router.post('/create-order', createPayPalOrder); // Create PayPal order
-router.post('/capture-order', capturePayment); // Capture payment after approval
-router.post('/confirm', confirmPayment); // Alias for capture
+// Square payment routes
+router.post('/create-payment', createSquarePayment); // Create Square payment
+router.post('/confirm-payment', confirmPayment); // Confirm payment
 
 // Admin route to fix tickets for existing orders
 router.post(

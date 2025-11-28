@@ -10,7 +10,7 @@ import {
   updateCompetitionStatus,
   validateCompetitionAnswer,
 } from '../controllers/competition.controller';
-import { holdTickets, getCompetitionEntryList } from '../controllers/ticket.controller';
+import { holdTickets, getCompetitionEntryList, getCompetitionTicketList } from '../controllers/ticket.controller';
 import { getCompetitionDraws } from '../controllers/draw.controller';
 import { getCompetitionWinners } from '../controllers/winner.controller';
 import { protect, adminOnly, superAdminOnly } from '../middleware/auth.middleware';
@@ -35,6 +35,9 @@ router.get('/:id', getCompetition);
 
 // Protected routes - ticket reservation
 router.post('/:id/hold', protect, holdTickets);
+
+// User routes - ticket list
+router.get('/:id/tickets/list', protect, getCompetitionTicketList);
 
 // Public route for entry list (legacy support)
 router.post(

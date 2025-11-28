@@ -74,9 +74,13 @@ const buildCompetitionFilters = (
 ): CompetitionFilters => {
   const filters: CompetitionFilters = {};
 
+  // Always exclude deleted competitions unless explicitly included via query param
+  if (parseBooleanParam(query.includeDeleted) !== true) {
+    filters.deletedAt = { $exists: false };
+  }
+
   if (!includeInactive) {
     filters.isActive = true;
-    filters.deletedAt = { $exists: false };
     filters.status = { $ne: CompetitionStatus.DRAFT };
   }
 
@@ -940,12 +944,9 @@ export const deleteCompetition = async (
       throw new ApiError('Competition not found', 404);
     }
 
-    if (competition.ticketsSold > 0) {
-      throw new ApiError(
-        'Cannot delete competition with sold tickets. Please cancel instead.',
-        400
-      );
-    }
+    // Note: We allow deletion even with sold tickets since this is a soft delete.
+    // The competition data, tickets, orders, and winners remain in the database
+    // but the competition is marked as inactive and deleted.
 
     // Decrement category usage count
     if (competition.category) {

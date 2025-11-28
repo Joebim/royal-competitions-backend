@@ -198,6 +198,27 @@ export const submitEntry = async (
       isCorrect,
     });
 
+    // Update ticket validity based on answer correctness
+    // If answer is incorrect, mark ticket as invalid (won't be included in draws)
+    if (!isCorrect) {
+      await Ticket.updateOne(
+        {
+          ticketNumber,
+          competitionId,
+          userId: req.user._id,
+          orderId: order._id,
+        },
+        {
+          $set: {
+            isValid: false,
+          },
+        }
+      );
+      logger.info(
+        `Marked ticket ${ticketNumber} as invalid for competition ${competitionId} due to incorrect answer`
+      );
+    }
+
     // Get user for Klaviyo
     const user = await User.findById(req.user._id);
     if (!user) {

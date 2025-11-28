@@ -14,8 +14,6 @@ import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
 import { getPagination } from '../utils/pagination';
 import { UserRole } from '../models';
-import paypalService from '../services/paypal.service';
-import { config } from '../config/environment';
 import { generateOrderNumber } from '../utils/randomGenerator';
 import emailService from '../services/email.service';
 import klaviyoService from '../services/klaviyo.service';
@@ -36,7 +34,7 @@ const formatOrderResponse = (order: any) => {
     quantity: doc.quantity,
     status: doc.status,
     paymentStatus: doc.paymentStatus,
-    paypalOrderId: doc.paypalOrderId,
+    squarePaymentId: doc.squarePaymentId,
     ticketsReserved: doc.ticketsReserved,
     paymentReference: doc.paymentReference,
     billingDetails: doc.billingDetails,
@@ -254,6 +252,7 @@ export const createOrder = async (
       competitionId,
       qty,
       ticketsReserved, // Optional - will be auto-reserved if not provided
+      ticketsValid, // Optional - boolean or array of booleans indicating if tickets are valid (default: true)
       billingDetails,
       shippingAddress,
       marketingOptIn,
@@ -521,26 +520,14 @@ export const createOrder = async (
       status: OrderStatus.PENDING,
       paymentStatus: OrderPaymentStatus.PENDING,
       ticketsReserved: finalTicketsReserved,
+      ticketsValid: ticketsValid !== false, // Default to true if not provided or explicitly false
       billingDetails,
       shippingAddress,
       marketingOptIn: marketingOptIn || false,
     });
 
-    // Create PayPal order
+    // Order created - Square payment will be created when frontend calls /api/v1/payments/create-payment
     const orderId = String(order._id);
-    const paypalOrder = await paypalService.createOrder({
-      amount: amount, // Amount in decimal
-      currency: 'GBP',
-        orderId: orderId,
-      userId: req.user?._id?.toString() || 'guest',
-        competitionId: competitionId,
-      returnUrl: `${config.frontendUrl}/payment/success?orderId=${orderId}`,
-      cancelUrl: `${config.frontendUrl}/payment/cancel?orderId=${orderId}`,
-    });
-
-    // Update order with PayPal order ID
-    order.paypalOrderId = paypalOrder.id;
-    await order.save();
 
     // Track "Started Checkout" event in Klaviyo
     try {
@@ -609,8 +596,7 @@ export const createOrder = async (
       ApiResponse.success(
         {
           order: formatOrderResponse(order),
-          paypalOrderId: paypalOrder.id,
-          orderID: paypalOrder.id, // For PayPal Buttons
+          orderId: orderId,
         },
         'Order created successfully'
       )

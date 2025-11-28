@@ -34,6 +34,7 @@ class DrawService {
     const tickets = await Ticket.find({
       competitionId,
       status: 'active', // Only active tickets are eligible
+      isValid: true, // Only valid tickets (correct answers) are eligible for draws
     })
       .sort({ ticketNumber: 1 }) // Sort by ticket number for consistency
       .select('ticketNumber _id userId')

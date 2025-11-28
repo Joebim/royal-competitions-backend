@@ -25,8 +25,9 @@ export interface IOrder extends Document {
   status: OrderStatus;
   paymentStatus: OrderPaymentStatus;
   stripePaymentIntent?: string; // Deprecated - kept for backward compatibility
-  paypalOrderId?: string;
+  squarePaymentId?: string; // Square payment ID
   ticketsReserved: number[]; // Array of reserved ticket numbers
+  ticketsValid?: boolean; // Whether tickets are valid for draws (false if answer was incorrect, default: true)
   paymentReference?: string;
   billingDetails?: {
     firstName: string;
@@ -102,12 +103,16 @@ const orderSchema = new Schema<IOrder>(
     stripePaymentIntent: {
       type: String,
     },
-    paypalOrderId: {
+    squarePaymentId: {
       type: String,
     },
     ticketsReserved: {
       type: [Number],
       default: [],
+    },
+    ticketsValid: {
+      type: Boolean,
+      default: true, // Default to true - tickets are valid unless answer is incorrect
     },
     paymentReference: String,
     billingDetails: {
@@ -131,7 +136,7 @@ orderSchema.index({ userId: 1, createdAt: -1 });
 orderSchema.index({ competitionId: 1 });
 orderSchema.index({ status: 1, paymentStatus: 1 });
 orderSchema.index({ stripePaymentIntent: 1 });
-orderSchema.index({ paypalOrderId: 1 });
+orderSchema.index({ squarePaymentId: 1 });
 
 const Order: Model<IOrder> = mongoose.model<IOrder>('Order', orderSchema);
 

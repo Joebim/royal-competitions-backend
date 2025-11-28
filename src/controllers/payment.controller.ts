@@ -14,30 +14,34 @@ import { CompetitionStatus } from '../models/Competition.model';
 import { PaymentStatus } from '../models/Payment.model';
 import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
-import paypalService from '../services/paypal.service';
-import { config } from '../config/environment';
+import squareService from '../services/square.service';
+import { v4 as uuidv4 } from 'uuid';
 import klaviyoService from '../services/klaviyo.service';
 import emailService from '../services/email.service';
 import logger from '../utils/logger';
 
 /**
- * @desc    Create PayPal order
- * @route   POST /api/v1/payments/create-order
+ * @desc    Create Square payment
+ * @route   POST /api/v1/payments/create-payment
  * @access  Public (can be called from frontend)
  *
- * This endpoint creates a PayPal order and returns the orderID
- * Frontend will use this orderID with PayPal Buttons
+ * This endpoint creates a Square payment using the sourceId (nonce) from frontend
+ * Frontend will use Square Web Payments SDK to get the sourceId
  */
-export const createPayPalOrder = async (
+export const createSquarePayment = async (
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { amount, orderId } = req.body;
+    const { sourceId, amount, orderId, idempotencyKey } = req.body;
 
-    if (!amount) {
-      throw new ApiError('Amount is required', 400);
+    if (!sourceId) {
+      throw new ApiError('sourceId (payment nonce) is required', 400);
+    }
+
+    if (!amount && !orderId) {
+      throw new ApiError('Amount or orderId is required', 400);
     }
 
     // If orderId is provided, verify it exists
@@ -58,12 +62,15 @@ export const createPayPalOrder = async (
       }
     }
 
-    // Create PayPal order
+    // Get order amount
     const orderAmount = order
       ? order.amount ||
         ((order as any).amountPence ? (order as any).amountPence / 100 : 0)
       : amount;
-    const paypalOrder = await paypalService.createOrder({
+
+    // Create Square payment
+    const squarePayment = await squareService.createPayment({
+      sourceId,
       amount: orderAmount,
       currency: order?.currency || 'GBP',
       orderId: orderId || undefined,
@@ -71,17 +78,12 @@ export const createPayPalOrder = async (
         ? String(order.userId)
         : req.user?._id?.toString() || 'guest',
       competitionId: order ? String(order.competitionId) : undefined,
-      returnUrl: orderId
-        ? `${config.frontendUrl}/payment/success?orderId=${orderId}`
-        : undefined,
-      cancelUrl: orderId
-        ? `${config.frontendUrl}/payment/cancel?orderId=${orderId}`
-        : undefined,
+      idempotencyKey: idempotencyKey || uuidv4(),
     });
 
-    // Update order with PayPal order ID if order exists
+    // Update order with Square payment ID if order exists
     if (order) {
-      order.paypalOrderId = paypalOrder.id;
+      order.squarePaymentId = squarePayment.id;
       await order.save();
 
       // Create payment record
@@ -89,7 +91,7 @@ export const createPayPalOrder = async (
         orderId: order._id,
         userId: order.userId || req.user?._id,
         amount: orderAmount,
-        paymentIntentId: paypalOrder.id,
+        paymentIntentId: squarePayment.id,
         status: PaymentStatus.PENDING,
       });
 
@@ -123,14 +125,30 @@ export const createPayPalOrder = async (
       }
     }
 
-    // Return orderID for frontend PayPal Buttons
+    // Check payment status
+    if (squarePayment.status === 'COMPLETED') {
+      // Payment completed immediately - handle success
+      if (order) {
+        await handlePaymentSuccess(
+          {
+            id: squarePayment.id,
+            status: squarePayment.status,
+            amount_money: squarePayment.amountMoney,
+          },
+          req.user?._id
+        );
+      }
+    }
+
+    // Return payment details for frontend
     res.json(
       ApiResponse.success(
         {
-          orderID: paypalOrder.id,
-          paypalOrderId: paypalOrder.id, // Alias for consistency
+          paymentId: squarePayment.id,
+          status: squarePayment.status,
+          orderId: order?._id || null,
         },
-        'PayPal order created'
+        'Square payment created'
       )
     );
     return;
@@ -140,46 +158,41 @@ export const createPayPalOrder = async (
 };
 
 /**
- * @desc    Capture PayPal payment
- * @route   POST /api/v1/payments/capture-order
- * @access  Public (called from frontend after PayPal approval)
+ * @desc    Confirm Square payment
+ * @route   POST /api/v1/payments/confirm-payment
+ * @access  Public (called from frontend after payment)
  *
- * This endpoint captures the PayPal payment after user approval
- * Frontend calls this after PayPal Buttons onApprove callback
+ * This endpoint confirms a Square payment by payment ID
+ * Frontend calls this after Square payment is processed
  */
-export const capturePayment = async (
+export const confirmPayment = async (
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { orderID, orderId } = req.body;
+    const { paymentId, orderId } = req.body;
 
-    // orderID is from PayPal (preferred)
-    // orderId is our internal order ID (fallback)
-    const paypalOrderId = orderID || req.body.paypalOrderId;
-
-    if (!paypalOrderId) {
-      throw new ApiError('PayPal orderID is required', 400);
+    if (!paymentId && !orderId) {
+      throw new ApiError('Payment ID or Order ID is required', 400);
     }
 
-    // Find order by PayPal order ID or internal order ID
+    // Find order by Square payment ID or internal order ID
     let order = null;
     if (orderId) {
       order = await Order.findById(orderId);
       if (!order) {
         throw new ApiError('Order not found', 404);
       }
-    } else {
-      order = await Order.findOne({ paypalOrderId });
+    } else if (paymentId) {
+      order = await Order.findOne({ squarePaymentId: paymentId });
       if (!order) {
-        // Order might not exist yet if created directly from frontend
-        // This is okay - we'll create it during capture
-        logger.warn(`Order not found for PayPal order ${paypalOrderId}`);
+        logger.warn(`Order not found for Square payment ${paymentId}`);
+        throw new ApiError('Order not found for this payment', 404);
       }
     }
 
-    // Check if order is already paid (if order exists)
+    // Check if order is already paid
     if (order && order.paymentStatus === OrderPaymentStatus.PAID) {
       logger.info(`Order ${order._id} already paid, returning success`);
       res.json(
@@ -195,16 +208,18 @@ export const capturePayment = async (
       return;
     }
 
-    // Capture the payment
-    const captureResult = await paypalService.captureOrder(paypalOrderId);
+    // Get payment details from Square
+    if (!order) {
+      throw new ApiError('Order not found', 404);
+    }
+    
+    const squarePayment = await squareService.getPayment(
+      paymentId || order.squarePaymentId || ''
+    );
 
     // Check if payment was successful
-    if (captureResult.status === 'COMPLETED') {
-      // Get the capture details
-      const capture =
-        captureResult.purchase_units?.[0]?.payments?.captures?.[0];
-
-      if (capture && order) {
+    if (squarePayment.status === 'COMPLETED') {
+      if (order && squarePayment.status === 'COMPLETED') {
         // If order doesn't have userId but user is authenticated, update order with userId
         if (!order.userId && req.user?._id) {
           order.userId = req.user._id as any;
@@ -215,13 +230,9 @@ export const capturePayment = async (
         }
         await handlePaymentSuccess(
           {
-            ...capture,
-            order_id: paypalOrderId,
-            supplementary_data: {
-              related_ids: {
-                order_id: paypalOrderId,
-              },
-            },
+            id: squarePayment.id,
+            status: squarePayment.status,
+            amount_money: squarePayment.amountMoney,
           },
           req.user?._id // Pass authenticated user ID if available
         );
@@ -232,37 +243,28 @@ export const capturePayment = async (
           {
             status: 'success',
             orderId: order?._id || null,
-            captureId: capture?.id,
-            paypalOrderId: paypalOrderId,
-            data: captureResult,
+            paymentId: squarePayment.id,
+            data: squarePayment,
           },
-          'Payment captured successfully'
+          'Payment confirmed successfully'
         )
       );
       return;
     } else {
       throw new ApiError(
-        `Payment capture failed with status: ${captureResult.status}`,
+        `Payment failed with status: ${squarePayment.status}`,
         400
       );
     }
   } catch (error: any) {
-    logger.error('Capture payment error:', error);
+    logger.error('Confirm payment error:', error);
     next(error);
   }
 };
 
-/**
- * @desc    Confirm PayPal payment (alternative endpoint for clarity)
- * @route   POST /api/v1/payments/confirm
- * @access  Public
- *
- * Alias for capturePayment - provides clearer naming for frontend
- */
-export const confirmPayment = capturePayment;
 
 /**
- * @desc    PayPal webhook handler
+ * @desc    Square webhook handler
  * @route   POST /api/v1/payments/webhook
  * @access  Public
  */
@@ -271,44 +273,66 @@ export const handleWebhook = async (
   res: Response
 ): Promise<void> => {
   try {
+    const webhookUrl = req.originalUrl;
+    const body = JSON.stringify(req.body);
+
     // Verify webhook signature
-    const verified = await paypalService.verifyWebhookSignature(
+    const verified = await squareService.verifyWebhookSignature(
       req.headers as any,
-      JSON.stringify(req.body),
-      config.paypal.webhookId
+      body,
+      webhookUrl
     );
 
     if (!verified) {
-      logger.error('Invalid PayPal webhook signature');
+      logger.error('Invalid Square webhook signature');
       res.status(400).json({ error: 'Invalid webhook signature' });
       return;
     }
 
     const event = req.body;
-    logger.info(`PayPal webhook received: ${event.event_type}`);
+    logger.info(`Square webhook received: ${event.type}`);
 
-    switch (event.event_type) {
-      case 'PAYMENT.CAPTURE.COMPLETED':
-        await handlePaymentSuccess(event.resource);
+    switch (event.type) {
+      case 'payment.updated':
+        const payment = event.data?.object?.payment;
+        if (payment) {
+          if (payment.status === 'COMPLETED') {
+            await handlePaymentSuccess(
+              {
+                id: payment.id,
+                status: payment.status,
+                amount_money: payment.amountMoney,
+              },
+              undefined
+            );
+          } else if (payment.status === 'FAILED' || payment.status === 'CANCELED') {
+            await handlePaymentFailure({
+              id: payment.id,
+              status: payment.status,
+            });
+          }
+        }
         break;
 
-      case 'PAYMENT.CAPTURE.DENIED':
-      case 'PAYMENT.CAPTURE.REFUNDED':
-        await handlePaymentFailure(event.resource);
-        break;
-
-      case 'PAYMENT.CAPTURE.REFUNDED':
-        await handleRefund(event.resource);
+      case 'refund.updated':
+        const refund = event.data?.object?.refund;
+        if (refund && refund.status === 'COMPLETED') {
+          await handleRefund({
+            id: refund.id,
+            payment_id: refund.paymentId,
+            amount_money: refund.amountMoney,
+          });
+        }
         break;
 
       default:
-        logger.info(`Unhandled PayPal event type: ${event.event_type}`);
+        logger.info(`Unhandled Square event type: ${event.type}`);
     }
 
     res.status(200).json({ received: true });
     return;
   } catch (error: any) {
-    logger.error('PayPal webhook error:', error);
+    logger.error('Square webhook error:', error);
     res.status(400).send(`Webhook Error: ${error.message}`);
     return;
   }
@@ -319,18 +343,17 @@ export const handleWebhook = async (
  * Issues tickets and updates order status
  */
 export async function handlePaymentSuccess(
-  capture: any,
+  payment: any,
   authenticatedUserId?: any
 ) {
   try {
-    // Find order by PayPal order ID
-    const paypalOrderId =
-      capture.supplementary_data?.related_ids?.order_id || capture.order_id;
+    // Find order by Square payment ID
+    const squarePaymentId = payment.id;
 
-    const order = await Order.findOne({ paypalOrderId });
+    const order = await Order.findOne({ squarePaymentId });
 
     if (!order) {
-      logger.error(`Order not found for PayPal order ${paypalOrderId}`);
+      logger.error(`Order not found for Square payment ${squarePaymentId}`);
       return;
     }
 
@@ -352,8 +375,12 @@ export async function handlePaymentSuccess(
     // Update order status
     order.status = OrderStatus.COMPLETED;
     order.paymentStatus = OrderPaymentStatus.PAID;
-    order.paymentReference = capture.id;
+    order.paymentReference = payment.id;
     await order.save();
+
+    // Get isValid from order - frontend can send this when creating order
+    // Default to true if not provided
+    const isValid = order.ticketsValid !== false; // Default to true
 
     // Update reserved tickets to active
     // First, try to find tickets by RESERVED status
@@ -368,6 +395,7 @@ export async function handlePaymentSuccess(
           status: TicketStatus.ACTIVE,
           orderId: order._id,
           userId: order.userId || null, // Set userId even if null (for guest orders)
+          isValid: isValid, // Set isValid based on answer correctness
         },
         $unset: {
           reservedUntil: 1,
@@ -405,6 +433,7 @@ export async function handlePaymentSuccess(
           status: TicketStatus.ACTIVE,
           orderId: order._id,
           userId: order.userId || null,
+          isValid: isValid, // Set isValid based on answer correctness
         }));
 
         await Ticket.insertMany(ticketsToCreate);
@@ -426,6 +455,7 @@ export async function handlePaymentSuccess(
               status: TicketStatus.ACTIVE,
               orderId: order._id,
               userId: order.userId || null,
+              isValid: isValid, // Set isValid based on answer correctness
             },
             $unset: {
               reservedUntil: 1,
@@ -487,10 +517,10 @@ export async function handlePaymentSuccess(
 
     // Update payment record
     await Payment.findOneAndUpdate(
-      { paymentIntentId: paypalOrderId },
+      { paymentIntentId: squarePaymentId },
       {
         status: PaymentStatus.SUCCEEDED,
-        paymentMethod: 'paypal',
+        paymentMethod: 'square',
       }
     );
 
@@ -683,12 +713,14 @@ export async function fixOrderTickets(orderId: string) {
 
     // Create missing tickets
     if (missingNumbers.length > 0) {
+      const isValid = order.ticketsValid !== false; // Default to true
       const ticketsToCreate = missingNumbers.map((ticketNumber) => ({
         competitionId: order.competitionId,
         ticketNumber,
         status: TicketStatus.ACTIVE,
         orderId: order._id,
         userId: order.userId || null,
+        isValid: isValid,
       }));
 
       try {
@@ -719,6 +751,7 @@ export async function fixOrderTickets(orderId: string) {
           orderId: order._id,
           userId: order.userId || null,
           status: TicketStatus.ACTIVE,
+          isValid: order.ticketsValid !== false, // Default to true
         },
       }
     );
@@ -744,13 +777,13 @@ export async function fixOrderTickets(orderId: string) {
  * Handle failed payment
  * Releases reserved tickets
  */
-async function handlePaymentFailure(capture: any) {
+async function handlePaymentFailure(payment: any) {
   try {
-    const paypalOrderId = capture.order_id;
-    const order = await Order.findOne({ paypalOrderId });
+    const squarePaymentId = payment.id;
+    const order = await Order.findOne({ squarePaymentId });
 
     if (!order) {
-      logger.error(`Order not found for PayPal order ${paypalOrderId}`);
+      logger.error(`Order not found for Square payment ${squarePaymentId}`);
       return;
     }
 
@@ -785,7 +818,7 @@ async function handlePaymentFailure(capture: any) {
 
     // Update payment
     await Payment.findOneAndUpdate(
-      { paymentIntentId: paypalOrderId },
+      { paymentIntentId: squarePaymentId },
       { status: PaymentStatus.FAILED }
     );
 
@@ -801,26 +834,33 @@ async function handlePaymentFailure(capture: any) {
  */
 async function handleRefund(refund: any) {
   try {
-    const captureId = refund.capture_id;
+    const refundId = refund.id;
+    const squarePaymentId = refund.payment_id;
 
-    // Find payment by capture ID
-    const payment = await Payment.findOne({ paymentReference: captureId });
-    if (!payment) {
-      logger.error(`Payment not found for capture ${captureId}`);
-      return;
-    }
-
-    const order = await Order.findById(payment.orderId);
+    // Find order by Square payment ID
+    const order = await Order.findOne({ squarePaymentId });
     if (!order) {
-      logger.error(`Order not found for payment ${payment._id}`);
+      logger.error(`Order not found for Square payment ${squarePaymentId}`);
       return;
     }
+
+    // Find payment record
+    const payment = await Payment.findOne({ orderId: order._id });
+    if (!payment) {
+      logger.error(`Payment not found for order ${order._id}`);
+      return;
+    }
+
+    // Convert amount from cents to decimal
+    const refundAmount = refund.amount_money
+      ? Number(refund.amount_money.amount) / 100
+      : order.amount;
 
     // Update payment
     await Payment.findByIdAndUpdate(payment._id, {
       status: PaymentStatus.REFUNDED,
-      refundId: refund.id,
-      refundAmount: parseFloat(refund.amount.value), // Amount in decimal
+      refundId: refundId,
+      refundAmount: refundAmount,
     });
 
     // Update order
@@ -862,7 +902,7 @@ async function handleRefund(refund: any) {
           amount:
             order.amount ||
             ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
-          refundAmount: parseFloat(refund.amount.value),
+          refundAmount: refundAmount,
           ticketNumbers: order.ticketsReserved,
         },
       },
@@ -893,7 +933,7 @@ async function handleRefund(refund: any) {
       }
     }
 
-    logger.info(`Refund processed for capture ${captureId}`);
+    logger.info(`Refund processed for Square payment ${squarePaymentId}`);
   } catch (error: any) {
     logger.error('Handle refund error:', error);
   }

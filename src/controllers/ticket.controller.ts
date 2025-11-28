@@ -537,3 +537,208 @@ export const getCompetitionTickets = async (
     next(error);
   }
 };
+
+/**
+ * Get ticket list for a competition with buy status (user endpoint)
+ * GET /api/v1/competitions/:id/tickets/list
+ * Returns tickets for a competition showing which are bought and which are available
+ * Paginated in ranges of 100 tickets (1-100, 101-200, etc.)
+ * 
+ * Query parameters:
+ * - range: Range number (1 = tickets 1-100, 2 = tickets 101-200, etc.) - defaults to 1
+ * - startTicket: Alternative way to specify start ticket number (overrides range)
+ * - endTicket: Alternative way to specify end ticket number (overrides range)
+ */
+export const getCompetitionTicketList = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    if (!req.user) {
+      throw new ApiError('Not authorized', 401);
+    }
+
+    const competitionId = req.params.id;
+    const RANGE_SIZE = 100; // Fixed range size of 100 tickets
+    
+    // Get competition to check ticket limit
+    const competition = await Competition.findById(competitionId);
+    if (!competition) {
+      throw new ApiError('Competition not found', 404);
+    }
+
+    // Determine the range of tickets to return
+    let startTicket: number;
+    let endTicket: number;
+
+    // If startTicket and endTicket are explicitly provided, use them
+    if (req.query.startTicket && req.query.endTicket) {
+      startTicket = Number(req.query.startTicket);
+      endTicket = Number(req.query.endTicket);
+    } else {
+      // Otherwise, use range parameter (1 = tickets 1-100, 2 = tickets 101-200, etc.)
+      const range = Number(req.query.range) || 1;
+      startTicket = (range - 1) * RANGE_SIZE + 1;
+      endTicket = range * RANGE_SIZE;
+    }
+
+    // Validate range
+    if (startTicket < 1) {
+      startTicket = 1;
+    }
+    if (endTicket < startTicket) {
+      endTicket = startTicket + RANGE_SIZE - 1;
+    }
+
+    // If competition has a ticket limit, don't exceed it
+    const effectiveMaxTicket = competition.ticketLimit 
+      ? Math.min(endTicket, competition.ticketLimit)
+      : endTicket;
+    
+    // Ensure start doesn't exceed the limit
+    if (competition.ticketLimit && startTicket > competition.ticketLimit) {
+      throw new ApiError(
+        `Start ticket number (${startTicket}) exceeds competition ticket limit (${competition.ticketLimit})`,
+        400
+      );
+    }
+
+    // Get all bought tickets (ACTIVE or WINNER status) for this competition
+    const boughtTickets = await Ticket.find({
+      competitionId,
+      status: { $in: [TicketStatus.ACTIVE, TicketStatus.WINNER] },
+      ticketNumber: { $gte: startTicket, $lte: effectiveMaxTicket },
+    })
+      .select('ticketNumber status isValid')
+      .lean();
+
+    // Create a set of bought ticket numbers for quick lookup
+    const boughtTicketNumbers = new Set(
+      boughtTickets.map((t: any) => t.ticketNumber)
+    );
+
+    // Get reserved tickets (that haven't expired) in this range
+    const now = new Date();
+    const reservedTickets = await Ticket.find({
+      competitionId,
+      status: TicketStatus.RESERVED,
+      reservedUntil: { $gt: now },
+      ticketNumber: { $gte: startTicket, $lte: effectiveMaxTicket },
+    })
+      .select('ticketNumber userId')
+      .lean();
+
+    // Create a set of reserved ticket numbers
+    const reservedTicketNumbers = new Set(
+      reservedTickets.map((t: any) => t.ticketNumber)
+    );
+
+    // Build the ticket list
+    const ticketList: Array<{
+      ticketNumber: number;
+      status: 'available' | 'bought' | 'reserved';
+      isValid?: boolean; // Only present for bought tickets
+      isMine?: boolean;
+    }> = [];
+
+    for (let ticketNum = startTicket; ticketNum <= effectiveMaxTicket; ticketNum++) {
+      if (boughtTicketNumbers.has(ticketNum)) {
+        // Ticket is bought - get its validity status
+        const boughtTicket = boughtTickets.find(
+          (t: any) => t.ticketNumber === ticketNum
+        );
+        ticketList.push({
+          ticketNumber: ticketNum,
+          status: 'bought',
+          isValid: boughtTicket?.isValid !== false, // Default to true if not set
+        });
+      } else if (reservedTicketNumbers.has(ticketNum)) {
+        // Check if it's reserved by the current user
+        const reservedTicket = reservedTickets.find(
+          (t: any) => t.ticketNumber === ticketNum
+        );
+        const isMine =
+          reservedTicket &&
+          reservedTicket.userId &&
+          String(reservedTicket.userId) === String(req.user._id);
+
+        ticketList.push({
+          ticketNumber: ticketNum,
+          status: 'reserved',
+          isMine: isMine || false,
+        });
+      } else {
+        // Ticket is available
+        ticketList.push({
+          ticketNumber: ticketNum,
+          status: 'available',
+        });
+      }
+    }
+
+    // Get statistics
+    const totalBought = await Ticket.countDocuments({
+      competitionId,
+      status: { $in: [TicketStatus.ACTIVE, TicketStatus.WINNER] },
+    });
+
+    const totalReserved = await Ticket.countDocuments({
+      competitionId,
+      status: TicketStatus.RESERVED,
+      reservedUntil: { $gt: now },
+    });
+
+    const totalAvailable =
+      competition.ticketLimit === null
+        ? null
+        : Math.max(0, competition.ticketLimit - totalBought - totalReserved);
+
+    // Calculate pagination info
+    const totalTickets = competition.ticketLimit || null;
+    const currentRange = Math.floor((startTicket - 1) / RANGE_SIZE) + 1;
+    const totalRanges = totalTickets 
+      ? Math.ceil(totalTickets / RANGE_SIZE)
+      : null;
+    const hasNextRange = totalTickets 
+      ? effectiveMaxTicket < totalTickets
+      : true; // If unlimited, assume there's always a next range
+    const hasPreviousRange = startTicket > 1;
+
+    res.json(
+      ApiResponse.success(
+        {
+          competition: {
+            id: competition._id,
+            title: competition.title,
+            ticketLimit: competition.ticketLimit,
+            ticketsSold: competition.ticketsSold,
+          },
+          tickets: ticketList,
+          range: {
+            start: startTicket,
+            end: effectiveMaxTicket,
+            total: ticketList.length,
+            currentRange,
+            totalRanges,
+            hasNextRange,
+            hasPreviousRange,
+            nextRangeStart: hasNextRange ? effectiveMaxTicket + 1 : null,
+            previousRangeStart: hasPreviousRange 
+              ? Math.max(1, startTicket - RANGE_SIZE)
+              : null,
+          },
+          statistics: {
+            totalBought,
+            totalReserved,
+            totalAvailable,
+          },
+        },
+        'Ticket list retrieved successfully'
+      )
+    );
+  } catch (error: any) {
+    logger.error('Error getting competition ticket list:', error);
+    next(error);
+  }
+};

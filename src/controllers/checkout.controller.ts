@@ -3,18 +3,14 @@ import {
   Cart,
   Competition,
   Order,
-  Payment,
   Ticket,
   TicketStatus,
   User,
 } from '../models';
 import { OrderPaymentStatus, OrderStatus } from '../models/Order.model';
 import { CompetitionStatus } from '../models/Competition.model';
-import { PaymentStatus } from '../models/Payment.model';
 import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
-import paypalService from '../services/paypal.service';
-import { config } from '../config/environment';
 import emailService from '../services/email.service';
 import logger from '../utils/logger';
 import { generateOrderNumber } from '../utils/randomGenerator';
@@ -262,29 +258,7 @@ export const createCheckoutFromCart = async (
         marketingOptIn: marketingOptIn || false,
       });
 
-      // Create PayPal order
-      const paypalOrder = await paypalService.createOrder({
-        amount: amount,
-        currency: 'GBP',
-          orderId: String(order._id),
-        userId: String(req.user._id),
-          competitionId: String(competition._id),
-        returnUrl: `${config.frontendUrl}/payment/success?orderId=${order._id}`,
-        cancelUrl: `${config.frontendUrl}/payment/cancel?orderId=${order._id}`,
-      });
-
-      // Update order with PayPal order ID
-      order.paypalOrderId = paypalOrder.id;
-      await order.save();
-
-      // Create payment record
-      await Payment.create({
-        orderId: order._id,
-        userId: req.user._id,
-        amount: amount,
-        paymentIntentId: paypalOrder.id,
-        status: PaymentStatus.PENDING,
-      });
+      // Order created - Square payment will be created when frontend calls /api/v1/payments/create-payment
 
       // Send order confirmation email
       if (billingDetails?.email) {
@@ -314,8 +288,7 @@ export const createCheckoutFromCart = async (
         quantity: cartItem.quantity,
         amount,
         amountGBP: amount.toFixed(2),
-        paypalOrderId: paypalOrder.id,
-        orderID: paypalOrder.id, // For PayPal Buttons
+        orderId: String(order._id),
       });
     }
 
@@ -421,40 +394,8 @@ export const createCheckoutPaymentIntent = async (
       order.marketingOptIn = marketingOptIn;
     }
 
-    // Create or update PayPal order
-    let paypalOrder;
-    if (order.paypalOrderId) {
-      // Order already has PayPal order ID, return it
-      paypalOrder = { id: order.paypalOrderId };
-    } else {
-      // Create new PayPal order
-      const orderAmount = order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0);
-      paypalOrder = await paypalService.createOrder({
-        amount: orderAmount,
-        currency: 'GBP',
-          orderId: String(order._id),
-        userId: order.userId ? String(order.userId) : 'guest',
-          competitionId: String(order.competitionId),
-        returnUrl: `${config.frontendUrl}/payment/success?orderId=${order._id}`,
-        cancelUrl: `${config.frontendUrl}/payment/cancel?orderId=${order._id}`,
-      });
-
-      order.paypalOrderId = paypalOrder.id;
-      await order.save();
-
-      // Create or update payment record
-      await Payment.findOneAndUpdate(
-        { paymentIntentId: paypalOrder.id },
-        {
-          orderId: order._id,
-          userId: order.userId,
-          amount: order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
-          paymentIntentId: paypalOrder.id,
-          status: PaymentStatus.PENDING,
-        },
-        { upsert: true, new: true }
-      );
-    }
+    // Order exists - Square payment will be created when frontend calls /api/v1/payments/create-payment
+    const orderAmount = order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0);
 
     res.json(
       ApiResponse.success(
@@ -462,19 +403,13 @@ export const createCheckoutPaymentIntent = async (
           order: {
             id: order._id,
             competitionId: order.competitionId,
-            amount: order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
-            amountGBP: (order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0)).toFixed(2),
+            amount: orderAmount,
+            amountGBP: orderAmount.toFixed(2),
             quantity: order.quantity,
             ticketsReserved: order.ticketsReserved,
           },
-          payment: {
-            paypalOrderId: paypalOrder.id,
-            orderID: paypalOrder.id, // For PayPal Buttons
-            amount: order.amount || ((order as any).amountPence ? (order as any).amountPence / 100 : 0),
-            currency: 'GBP',
-          },
         },
-        'PayPal order created'
+        'Order ready for payment'
       )
     );
   } catch (error) {
@@ -492,17 +427,17 @@ export const confirmCheckoutOrder = async (
   next: NextFunction
 ) => {
   try {
-    const { orderId, paypalOrderId } = req.body;
+    const { orderId, paymentId } = req.body;
 
-    if (!orderId && !paypalOrderId) {
-      throw new ApiError('Order ID or PayPal Order ID is required', 400);
+    if (!orderId && !paymentId) {
+      throw new ApiError('Order ID or Payment ID is required', 400);
     }
 
     let order;
     if (orderId) {
       order = await Order.findById(orderId);
-    } else if (paypalOrderId) {
-      order = await Order.findOne({ paypalOrderId });
+    } else if (paymentId) {
+      order = await Order.findOne({ squarePaymentId: paymentId });
     }
 
     if (!order) {
@@ -519,8 +454,8 @@ export const confirmCheckoutOrder = async (
       throw new ApiError('Not authorized', 403);
     }
 
-    // Check PayPal order status if paypalOrderId is provided
-    // Note: For PayPal, we rely on webhooks for payment confirmation
+    // Check Square payment status if paymentId is provided
+    // Note: For Square, we rely on webhooks for payment confirmation
     // This endpoint mainly returns the current order status
 
     if (!order) {
@@ -554,7 +489,7 @@ export const confirmCheckoutOrder = async (
               ticketNumber: ticket.ticketNumber,
               status: ticket.status,
             })),
-            paypalOrderId: order.paypalOrderId || null,
+            squarePaymentId: order.squarePaymentId || null,
             createdAt: order.createdAt,
             updatedAt: order.updatedAt,
           },

@@ -10,7 +10,6 @@ import routes from './routes';
 import swaggerSpec from './config/swagger';
 import { handleWebhook } from './controllers/payment.controller';
 import { errorHandler } from './middleware/errorHandler.middleware';
-import { rateLimiter } from './middleware/rateLimiter.middleware';
 import logger from './utils/logger';
 import { ApiError } from './utils/apiError';
 
@@ -41,7 +40,7 @@ app.use(
 app.use(mongoSanitize());
 app.use(cookieParser());
 
-// PayPal webhook route MUST use raw body (needs to be before express.json)
+// Square webhook route MUST use raw body (needs to be before express.json)
 app.post(
   '/api/v1/payments/webhook',
   express.raw({ type: 'application/json' }),
@@ -63,8 +62,8 @@ if (config.nodeEnv === 'development') {
   );
 }
 
-// Rate limiting
-app.use('/api', rateLimiter);
+// Rate limiting - DISABLED
+// app.use('/api', rateLimiter);
 
 // Health check route
 app.get('/health', (_req: Request, res: Response) => {

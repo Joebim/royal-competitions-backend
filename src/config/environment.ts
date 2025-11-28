@@ -16,12 +16,12 @@ interface Config {
     refreshSecret: string;
     refreshExpire: string;
   };
-  paypal: {
-    clientId: string;
-    clientSecret: string;
-    baseUrl: string;
-    webhookId: string;
-    mode: string;
+  square: {
+    accessToken: string;
+    locationId: string;
+    applicationId: string;
+    environment: string;
+    webhookSecret?: string;
   };
   cloudinary: {
     cloudName: string;
@@ -97,12 +97,12 @@ export const config: Config = {
     refreshSecret: process.env.JWT_REFRESH_SECRET || 'your_refresh_secret',
     refreshExpire: process.env.JWT_REFRESH_EXPIRE || '30d',
   },
-  paypal: {
-    clientId: process.env.PAYPAL_CLIENT_ID || '',
-    clientSecret: process.env.PAYPAL_CLIENT_SECRET || '',
-    baseUrl: process.env.PAYPAL_BASE_URL || 'https://api-m.sandbox.paypal.com',
-    webhookId: process.env.PAYPAL_WEBHOOK_ID || '',
-    mode: process.env.PAYPAL_MODE || 'sandbox', // 'sandbox' or 'live'
+  square: {
+    accessToken: process.env.SQ_ACCESS_TOKEN || '',
+    locationId: process.env.SQ_LOCATION_ID || '',
+    applicationId: process.env.SQ_APP_ID || '',
+    environment: process.env.SQ_ENVIRONMENT || 'sandbox', // 'sandbox' or 'production'
+    webhookSecret: process.env.SQ_WEBHOOK_SECRET || '',
   },
   cloudinary: {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',

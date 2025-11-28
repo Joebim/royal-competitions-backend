@@ -15,7 +15,6 @@ import {
   verifyAdmin,
 } from '../controllers/auth.controller';
 import { protect, adminOnly } from '../middleware/auth.middleware';
-import { authLimiter } from '../middleware/rateLimiter.middleware';
 import { validate } from '../middleware/validation.middleware';
 import {
   registerSchema,
@@ -31,14 +30,14 @@ import {
 const router = Router();
 
 // Public routes
-router.post('/register', authLimiter, validate(registerSchema), register);
-router.post('/login', authLimiter, validate(loginSchema), login);
+router.post('/register', validate(registerSchema), register);
+router.post('/login', validate(loginSchema), login);
 router.post('/refresh', refreshToken);
-router.post('/forgot-password', authLimiter, validate(forgotPasswordSchema), forgotPassword);
-router.post('/reset-password', authLimiter, validate(resetPasswordSchema), resetPassword);
+router.post('/forgot-password', validate(forgotPasswordSchema), forgotPassword);
+router.post('/reset-password', validate(resetPasswordSchema), resetPassword);
 router.get('/verify-email', verifyEmail); // GET for clickable links
 router.post('/verify-email', validate(verifyEmailSchema), verifyEmail); // POST for API calls
-router.post('/resend-verification', authLimiter, validate(resendVerificationSchema), resendVerificationEmail);
+router.post('/resend-verification', validate(resendVerificationSchema), resendVerificationEmail);
 
 // Protected routes
 router.get('/profile', protect, getProfile);
@@ -47,7 +46,7 @@ router.post('/change-password', protect, validate(changePasswordSchema), changeP
 router.post('/logout', protect, logout);
 
 // Admin routes
-router.post('/admin/login', authLimiter, validate(loginSchema), adminLogin);
+router.post('/admin/login', validate(loginSchema), adminLogin);
 router.get('/admin/verify', protect, adminOnly, verifyAdmin);
 
 export default router;
