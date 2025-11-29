@@ -36,8 +36,8 @@ router.get('/:id', getCompetition);
 // Protected routes - ticket reservation
 router.post('/:id/hold', protect, holdTickets);
 
-// User routes - ticket list
-router.get('/:id/tickets/list', protect, getCompetitionTicketList);
+// Public routes - ticket list (no authentication required)
+router.get('/:id/tickets/list', getCompetitionTicketList);
 
 // Public route for entry list (legacy support)
 router.post(

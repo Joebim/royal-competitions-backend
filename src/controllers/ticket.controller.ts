@@ -555,9 +555,8 @@ export const getCompetitionTicketList = async (
   next: NextFunction
 ) => {
   try {
-    if (!req.user) {
-      throw new ApiError('Not authorized', 401);
-    }
+    // Authentication is optional - if user is logged in, we'll show which tickets are theirs
+    const userId = req.user?._id?.toString();
 
     const competitionId = req.params.id;
     const RANGE_SIZE = 100; // Fixed range size of 100 tickets
@@ -654,14 +653,15 @@ export const getCompetitionTicketList = async (
           isValid: boughtTicket?.isValid !== false, // Default to true if not set
         });
       } else if (reservedTicketNumbers.has(ticketNum)) {
-        // Check if it's reserved by the current user
+        // Check if it's reserved by the current user (if authenticated)
         const reservedTicket = reservedTickets.find(
           (t: any) => t.ticketNumber === ticketNum
         );
         const isMine =
+          userId &&
           reservedTicket &&
           reservedTicket.userId &&
-          String(reservedTicket.userId) === String(req.user._id);
+          String(reservedTicket.userId) === userId;
 
         ticketList.push({
           ticketNumber: ticketNum,
