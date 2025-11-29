@@ -1,9 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
-import { Cart, Competition } from '../models';
+import { Cart, Competition, Ticket, TicketStatus } from '../models';
 import { CompetitionStatus } from '../models/Competition.model';
 import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
+import logger from '../utils/logger';
 
 const MAX_TICKETS_PER_ITEM = 20;
 
@@ -37,7 +38,7 @@ const formatCartResponse = async (cart: any) => {
         id: item._id,
         competitionId: item.competitionId,
         quantity: item.quantity,
-        ticketNumbers: item.ticketNumbers || [], // Array of selected ticket numbers
+        ticketNumbers: item.ticketNumbers || [], // Array of issued ticket numbers
         unitPrice: item.unitPrice,
         subtotal: item.subtotal,
         addedAt: item.addedAt,
@@ -142,7 +143,10 @@ export const addOrUpdateCartItem = async (
       throw new ApiError('Not authorized', 401);
     }
 
-    const { competitionId, quantity, ticketNumbers } = req.body;
+    const { competitionId, quantity, ticketNumbers, ticketType } = req.body;
+    // ticketType: 'lucky_draw' | 'number_picker'
+    // If ticketType is 'lucky_draw', ticketNumbers should not be provided (random selection)
+    // If ticketType is 'number_picker', ticketNumbers must be provided
 
     if (!competitionId || !mongoose.Types.ObjectId.isValid(competitionId)) {
       throw new ApiError('Valid competitionId is required', 422);
@@ -168,17 +172,60 @@ export const addOrUpdateCartItem = async (
 
     ensureCompetitionAvailability(competition);
 
+    // Get all existing ticket numbers (active, winner, or validly reserved)
+    const now = new Date();
+    const existingTickets = await Ticket.find({
+      competitionId,
+      $or: [
+        { status: { $in: [TicketStatus.ACTIVE, TicketStatus.WINNER] } },
+        {
+          status: TicketStatus.RESERVED,
+          reservedUntil: { $gt: now },
+        },
+      ],
+    })
+      .select('ticketNumber')
+      .lean();
+
+    const existingNumbers = new Set(
+      existingTickets.map((t: any) => t.ticketNumber)
+    );
+
     // Calculate available tickets
+    const totalTicketsUsed = existingNumbers.size;
     const availableTickets =
       competition.ticketLimit !== null
-        ? competition.ticketLimit - competition.ticketsSold
+        ? competition.ticketLimit - totalTicketsUsed
         : Infinity;
 
     if (availableTickets !== Infinity && parsedQuantity > availableTickets) {
-      throw new ApiError(
-        `Only ${availableTickets} tickets remaining for this competition`,
-        400
-      );
+      // For lucky draw, provide helpful message with available ticket numbers
+      if (ticketType === 'lucky_draw' || !ticketNumbers) {
+        // Find available ticket numbers to suggest
+        const availableNumbers: number[] = [];
+        let candidate = 1;
+        const maxCheck = competition.ticketLimit || 1000000;
+
+        while (
+          candidate <= maxCheck &&
+          availableNumbers.length < Math.min(availableTickets, 50)
+        ) {
+          if (!existingNumbers.has(candidate)) {
+            availableNumbers.push(candidate);
+          }
+          candidate++;
+        }
+
+        throw new ApiError(
+          `Only ${availableTickets} ticket(s) remaining for this competition. Available ticket numbers: ${availableNumbers.slice(0, 20).join(', ')}${availableNumbers.length > 20 ? '...' : ''}. Please use the number picker to select specific tickets.`,
+          400
+        );
+      } else {
+        throw new ApiError(
+          `Only ${availableTickets} tickets remaining for this competition`,
+          400
+        );
+      }
     }
 
     // Get ticket price in decimal
@@ -200,10 +247,16 @@ export const addOrUpdateCartItem = async (
       item.competitionId.equals(competition._id)
     );
 
-    // Validate ticket numbers if provided
-    if (ticketNumbers) {
-      if (!Array.isArray(ticketNumbers)) {
-        throw new ApiError('ticketNumbers must be an array', 422);
+    // Determine which ticket numbers to use
+    let finalTicketNumbers: number[] = [];
+
+    if (ticketType === 'number_picker' || ticketNumbers) {
+      // Number picker mode - use provided ticket numbers
+      if (!ticketNumbers || !Array.isArray(ticketNumbers)) {
+        throw new ApiError(
+          'ticketNumbers must be provided for number picker mode',
+          422
+        );
       }
       if (ticketNumbers.length !== parsedQuantity) {
         throw new ApiError(
@@ -213,27 +266,110 @@ export const addOrUpdateCartItem = async (
       }
       // Validate all ticket numbers are positive integers
       if (
-        !ticketNumbers.every(
-          (num: any) => Number.isInteger(num) && num > 0
-        )
+        !ticketNumbers.every((num: any) => Number.isInteger(num) && num > 0)
       ) {
+        throw new ApiError('All ticket numbers must be positive integers', 422);
+      }
+      // Check if any ticket numbers are already taken
+      const takenNumbers = ticketNumbers.filter((num: number) =>
+        existingNumbers.has(num)
+      );
+      if (takenNumbers.length > 0) {
         throw new ApiError(
-          'All ticket numbers must be positive integers',
-          422
+          `Ticket number(s) ${takenNumbers.join(', ')} are already taken. Please select different tickets.`,
+          400
         );
       }
+      finalTicketNumbers = ticketNumbers;
+    } else {
+      // Lucky draw mode - randomly select available tickets
+      const availableNumbers: number[] = [];
+      let candidate = 1;
+      const maxCheck = competition.ticketLimit || 1000000;
+
+      while (
+        availableNumbers.length < parsedQuantity &&
+        candidate <= maxCheck
+      ) {
+        if (!existingNumbers.has(candidate)) {
+          availableNumbers.push(candidate);
+        }
+        candidate++;
+      }
+
+      if (availableNumbers.length < parsedQuantity) {
+        throw new ApiError(
+          `Unable to find ${parsedQuantity} available tickets. Only ${availableNumbers.length} tickets available.`,
+          400
+        );
+      }
+
+      // Randomly shuffle and take the requested quantity
+      for (let i = availableNumbers.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [availableNumbers[i], availableNumbers[j]] = [
+          availableNumbers[j],
+          availableNumbers[i],
+        ];
+      }
+      finalTicketNumbers = availableNumbers
+        .slice(0, parsedQuantity)
+        .sort((a, b) => a - b);
     }
 
+    // Create tickets with status RESERVED
+    const reservedUntil = new Date(now.getTime() + 15 * 60 * 1000); // 15 minutes
+    const ticketsToCreate = finalTicketNumbers.map((ticketNumber) => ({
+      competitionId: competition._id,
+      ticketNumber,
+      userId: req.user!._id, // Already validated at top of function
+      status: TicketStatus.RESERVED,
+      reservedUntil,
+    }));
+
+    try {
+      await Ticket.insertMany(ticketsToCreate, { ordered: false });
+      logger.info(
+        `Created ${finalTicketNumbers.length} reserved tickets for cart`,
+        {
+          competitionId,
+          ticketNumbers: finalTicketNumbers,
+          userId: req.user!._id,
+        }
+      );
+    } catch (insertError: any) {
+      if (insertError.code === 11000) {
+        // Duplicate key - tickets were taken by another request
+        throw new ApiError(
+          'Some tickets are no longer available. Please try again.',
+          409
+        );
+      }
+      throw insertError;
+    }
+
+    // If existing item, remove old tickets first
+    if (existingItem) {
+      // Delete old reserved tickets for this cart item
+      await Ticket.deleteMany({
+        competitionId: competition._id,
+        userId: req.user._id,
+        status: TicketStatus.RESERVED,
+        ticketNumber: { $in: existingItem.ticketNumbers || [] },
+      });
+    }
+
+    // Update or add cart item
     if (existingItem) {
       existingItem.quantity = parsedQuantity;
       existingItem.unitPrice = ticketPriceGBP;
-      existingItem.ticketNumbers = ticketNumbers || undefined;
+      existingItem.ticketNumbers = finalTicketNumbers;
       recalculateItemSubtotal(existingItem);
     } else {
       cart.items.push({
         competitionId: competition._id,
         quantity: parsedQuantity,
-        ticketNumbers: ticketNumbers || undefined,
+        ticketNumbers: finalTicketNumbers,
         unitPrice: ticketPriceGBP,
         subtotal: Number((parsedQuantity * ticketPriceGBP).toFixed(2)),
       } as any);
@@ -264,7 +400,7 @@ export const updateCartItem = async (
       throw new ApiError('Not authorized', 401);
     }
 
-    const { quantity, ticketNumbers } = req.body;
+    const { quantity, ticketNumbers, ticketType } = req.body;
     const parsedQuantity = Number(quantity);
 
     if (!parsedQuantity || parsedQuantity < 1) {
@@ -298,17 +434,61 @@ export const updateCartItem = async (
 
     ensureCompetitionAvailability(competition);
 
+    // Get all existing ticket numbers (excluding current item's tickets)
+    const now = new Date();
+    const existingTickets = await Ticket.find({
+      competitionId: item.competitionId,
+      $or: [
+        { status: { $in: [TicketStatus.ACTIVE, TicketStatus.WINNER] } },
+        {
+          status: TicketStatus.RESERVED,
+          reservedUntil: { $gt: now },
+          // Exclude current item's tickets
+          ticketNumber: { $nin: item.ticketNumbers || [] },
+        },
+      ],
+    })
+      .select('ticketNumber')
+      .lean();
+
+    const existingNumbers = new Set(
+      existingTickets.map((t: any) => t.ticketNumber)
+    );
+
     // Calculate available tickets
+    const totalTicketsUsed = existingNumbers.size;
     const availableTickets =
       competition.ticketLimit !== null
-        ? competition.ticketLimit - competition.ticketsSold
+        ? competition.ticketLimit - totalTicketsUsed
         : Infinity;
 
     if (availableTickets !== Infinity && parsedQuantity > availableTickets) {
-      throw new ApiError(
-        `Only ${availableTickets} tickets remaining for this competition`,
-        400
-      );
+      if (ticketType === 'lucky_draw' || !ticketNumbers) {
+        // Find available ticket numbers to suggest
+        const availableNumbers: number[] = [];
+        let candidate = 1;
+        const maxCheck = competition.ticketLimit || 1000000;
+
+        while (
+          candidate <= maxCheck &&
+          availableNumbers.length < Math.min(availableTickets, 50)
+        ) {
+          if (!existingNumbers.has(candidate)) {
+            availableNumbers.push(candidate);
+          }
+          candidate++;
+        }
+
+        throw new ApiError(
+          `Only ${availableTickets} ticket(s) remaining for this competition. Available ticket numbers: ${availableNumbers.slice(0, 20).join(', ')}${availableNumbers.length > 20 ? '...' : ''}. Please use the number picker to select specific tickets.`,
+          400
+        );
+      } else {
+        throw new ApiError(
+          `Only ${availableTickets} tickets remaining for this competition`,
+          400
+        );
+      }
     }
 
     // Get ticket price in decimal
@@ -318,32 +498,132 @@ export const updateCartItem = async (
         ? (competition as any).ticketPricePence / 100
         : 0);
 
-    // Validate ticket numbers if provided
-    if (ticketNumbers !== undefined) {
-      if (ticketNumbers !== null && !Array.isArray(ticketNumbers)) {
-        throw new ApiError('ticketNumbers must be an array or null', 422);
+    // Determine which ticket numbers to use
+    let finalTicketNumbers: number[] = [];
+
+    if (ticketType === 'number_picker' || ticketNumbers) {
+      // Number picker mode
+      if (!ticketNumbers || !Array.isArray(ticketNumbers)) {
+        throw new ApiError(
+          'ticketNumbers must be provided for number picker mode',
+          422
+        );
       }
-      if (ticketNumbers && ticketNumbers.length !== parsedQuantity) {
+      if (ticketNumbers.length !== parsedQuantity) {
         throw new ApiError(
           `ticketNumbers array length (${ticketNumbers.length}) must match quantity (${parsedQuantity})`,
           422
         );
       }
-      // Validate all ticket numbers are positive integers
       if (
-        ticketNumbers &&
         !ticketNumbers.every((num: any) => Number.isInteger(num) && num > 0)
       ) {
+        throw new ApiError('All ticket numbers must be positive integers', 422);
+      }
+      // Check if any ticket numbers are already taken
+      const takenNumbers = ticketNumbers.filter((num: number) =>
+        existingNumbers.has(num)
+      );
+      if (takenNumbers.length > 0) {
         throw new ApiError(
-          'All ticket numbers must be positive integers',
+          `Ticket number(s) ${takenNumbers.join(', ')} are already taken. Please select different tickets.`,
+          400
+        );
+      }
+      finalTicketNumbers = ticketNumbers;
+    } else if (ticketNumbers === null || ticketNumbers === undefined) {
+      // Lucky draw mode - randomly select available tickets
+      const availableNumbers: number[] = [];
+      let candidate = 1;
+      const maxCheck = competition.ticketLimit || 1000000;
+
+      while (
+        availableNumbers.length < parsedQuantity &&
+        candidate <= maxCheck
+      ) {
+        if (!existingNumbers.has(candidate)) {
+          availableNumbers.push(candidate);
+        }
+        candidate++;
+      }
+
+      if (availableNumbers.length < parsedQuantity) {
+        throw new ApiError(
+          `Unable to find ${parsedQuantity} available tickets. Only ${availableNumbers.length} tickets available.`,
+          400
+        );
+      }
+
+      // Randomly shuffle and take the requested quantity
+      for (let i = availableNumbers.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [availableNumbers[i], availableNumbers[j]] = [
+          availableNumbers[j],
+          availableNumbers[i],
+        ];
+      }
+      finalTicketNumbers = availableNumbers
+        .slice(0, parsedQuantity)
+        .sort((a, b) => a - b);
+    } else {
+      // Keep existing ticket numbers if quantity unchanged and no new numbers provided
+      if (
+        parsedQuantity === item.quantity &&
+        item.ticketNumbers &&
+        item.ticketNumbers.length === parsedQuantity
+      ) {
+        finalTicketNumbers = item.ticketNumbers;
+      } else {
+        throw new ApiError(
+          'ticketNumbers or ticketType must be provided when updating quantity',
           422
         );
       }
     }
 
+    // Delete old reserved tickets for this cart item
+    if (item.ticketNumbers && item.ticketNumbers.length > 0) {
+      await Ticket.deleteMany({
+        competitionId: item.competitionId,
+        userId: req.user._id,
+        status: TicketStatus.RESERVED,
+        ticketNumber: { $in: item.ticketNumbers },
+      });
+    }
+
+    // Create new tickets with status RESERVED
+    const reservedUntil = new Date(now.getTime() + 15 * 60 * 1000); // 15 minutes
+    const ticketsToCreate = finalTicketNumbers.map((ticketNumber) => ({
+      competitionId: item.competitionId,
+      ticketNumber,
+      userId: req.user!._id, // Already validated at top of function
+      status: TicketStatus.RESERVED,
+      reservedUntil,
+    }));
+
+    try {
+      await Ticket.insertMany(ticketsToCreate, { ordered: false });
+      logger.info(
+        `Updated ${finalTicketNumbers.length} reserved tickets for cart item`,
+        {
+          competitionId: item.competitionId,
+          ticketNumbers: finalTicketNumbers,
+          userId: req.user._id,
+        }
+      );
+    } catch (insertError: any) {
+      if (insertError.code === 11000) {
+        throw new ApiError(
+          'Some tickets are no longer available. Please try again.',
+          409
+        );
+      }
+      throw insertError;
+    }
+
     item.quantity = parsedQuantity;
     item.unitPrice = ticketPriceGBP;
-    item.ticketNumbers = ticketNumbers !== undefined ? (ticketNumbers || undefined) : item.ticketNumbers;
+    item.ticketNumbers = finalTicketNumbers;
     recalculateItemSubtotal(item);
 
     await cart.save();
@@ -382,6 +662,24 @@ export const removeCartItem = async (
       throw new ApiError('Cart item not found', 404);
     }
 
+    // Delete reserved tickets for this cart item
+    if (item.ticketNumbers && item.ticketNumbers.length > 0) {
+      await Ticket.deleteMany({
+        competitionId: item.competitionId,
+        userId: req.user._id,
+        status: TicketStatus.RESERVED,
+        ticketNumber: { $in: item.ticketNumbers },
+      });
+      logger.info(
+        `Deleted ${item.ticketNumbers.length} reserved tickets for removed cart item`,
+        {
+          competitionId: item.competitionId,
+          ticketNumbers: item.ticketNumbers,
+          userId: req.user._id,
+        }
+      );
+    }
+
     item.deleteOne();
     await cart.save();
 
@@ -406,12 +704,222 @@ export const clearCart = async (
       throw new ApiError('Not authorized', 401);
     }
 
+    const cart = await Cart.findOne({ userId: req.user._id });
+    if (cart && cart.items && cart.items.length > 0) {
+      // Delete all reserved tickets for all cart items
+      for (const item of cart.items) {
+        if (item.ticketNumbers && item.ticketNumbers.length > 0) {
+          await Ticket.deleteMany({
+            competitionId: item.competitionId,
+            userId: req.user._id,
+            status: TicketStatus.RESERVED,
+            ticketNumber: { $in: item.ticketNumbers },
+          });
+        }
+      }
+      logger.info(
+        `Cleared cart and deleted reserved tickets for user ${req.user._id}`
+      );
+    }
+
     await Cart.findOneAndUpdate(
       { userId: req.user._id },
       { $set: { items: [] } }
     );
 
     res.json(ApiResponse.success(null, 'Cart cleared successfully'));
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Sync local cart (from localStorage) with server cart
+ * Merges local cart items with server cart items
+ * POST /api/v1/cart/sync
+ */
+export const syncCart = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    if (!req.user) {
+      throw new ApiError('Not authorized', 401);
+    }
+
+    const { localCartItems } = req.body;
+
+    if (!localCartItems || !Array.isArray(localCartItems)) {
+      throw new ApiError('localCartItems must be an array', 400);
+    }
+
+    // Get or create server cart
+    let cart = await Cart.findOne({ userId: req.user._id });
+    if (!cart) {
+      cart = await Cart.create({
+        userId: req.user._id,
+        items: [],
+      });
+    }
+
+    const mergedItems: any[] = [];
+    const processedCompetitionIds = new Set<string>();
+
+    // First, add all server cart items (they take priority)
+    for (const item of cart.items) {
+      const competitionId = String(item.competitionId);
+      processedCompetitionIds.add(competitionId);
+
+      // Verify competition is still available
+      const competition = await Competition.findById(item.competitionId);
+      if (competition) {
+        try {
+          ensureCompetitionAvailability(competition);
+
+          // Recalculate price in case it changed
+          const ticketPriceGBP =
+            competition.ticketPrice ||
+            ((competition as any).ticketPricePence
+              ? (competition as any).ticketPricePence / 100
+              : 0);
+
+          item.unitPrice = ticketPriceGBP;
+          recalculateItemSubtotal(item);
+
+          mergedItems.push(item);
+        } catch (error: any) {
+          // Competition no longer available, skip this item
+          logger.warn(
+            `Skipping cart item for unavailable competition ${competitionId}: ${error.message}`
+          );
+        }
+      }
+    }
+
+    // Then, add local cart items that don't exist in server cart
+    for (const localItem of localCartItems) {
+      const { competitionId, quantity, ticketNumbers } = localItem;
+
+      if (!competitionId || !mongoose.Types.ObjectId.isValid(competitionId)) {
+        logger.warn('Skipping invalid local cart item:', localItem);
+        continue;
+      }
+
+      const competitionIdStr = String(competitionId);
+
+      // Skip if already in server cart
+      if (processedCompetitionIds.has(competitionIdStr)) {
+        continue;
+      }
+
+      // Validate and add local item
+      try {
+        const competition = await Competition.findById(competitionId);
+        if (!competition) {
+          logger.warn(
+            `Competition ${competitionId} not found, skipping local cart item`
+          );
+          continue;
+        }
+
+        ensureCompetitionAvailability(competition);
+
+        const parsedQuantity = Number(quantity) || 1;
+        if (parsedQuantity < 1 || parsedQuantity > MAX_TICKETS_PER_ITEM) {
+          logger.warn(
+            `Invalid quantity ${parsedQuantity} for competition ${competitionId}, skipping`
+          );
+          continue;
+        }
+
+        // Calculate available tickets
+        const availableTickets =
+          competition.ticketLimit !== null
+            ? competition.ticketLimit - competition.ticketsSold
+            : Infinity;
+
+        if (
+          availableTickets !== Infinity &&
+          parsedQuantity > availableTickets
+        ) {
+          logger.warn(
+            `Only ${availableTickets} tickets available for competition ${competitionId}, adjusting quantity`
+          );
+          // Adjust quantity to available tickets
+          if (availableTickets <= 0) {
+            continue; // Skip if no tickets available
+          }
+        }
+
+        // Get ticket price
+        const ticketPriceGBP =
+          competition.ticketPrice ||
+          ((competition as any).ticketPricePence
+            ? (competition as any).ticketPricePence / 100
+            : 0);
+
+        // Validate ticket numbers if provided
+        if (ticketNumbers) {
+          if (!Array.isArray(ticketNumbers)) {
+            logger.warn(
+              `Invalid ticketNumbers for competition ${competitionId}, skipping`
+            );
+            continue;
+          }
+          if (ticketNumbers.length !== parsedQuantity) {
+            logger.warn(
+              `Ticket numbers length mismatch for competition ${competitionId}, using auto-assignment`
+            );
+            // Use auto-assignment if ticket numbers don't match quantity
+          }
+        }
+
+        // Add item to merged cart
+        mergedItems.push({
+          competitionId: competition._id,
+          quantity: Math.min(
+            parsedQuantity,
+            availableTickets === Infinity ? parsedQuantity : availableTickets
+          ),
+          ticketNumbers:
+            ticketNumbers &&
+            Array.isArray(ticketNumbers) &&
+            ticketNumbers.length === parsedQuantity
+              ? ticketNumbers
+              : undefined,
+          unitPrice: ticketPriceGBP,
+          subtotal: Number(
+            (
+              Math.min(
+                parsedQuantity,
+                availableTickets === Infinity
+                  ? parsedQuantity
+                  : availableTickets
+              ) * ticketPriceGBP
+            ).toFixed(2)
+          ),
+        } as any);
+
+        processedCompetitionIds.add(competitionIdStr);
+      } catch (error: any) {
+        // Skip invalid or unavailable items
+        logger.warn(
+          `Error processing local cart item for competition ${competitionId}: ${error.message}`
+        );
+      }
+    }
+
+    // Update cart with merged items
+    cart.items = mergedItems;
+    await cart.save();
+
+    res.json(
+      ApiResponse.success(
+        await formatCartResponse(cart),
+        'Cart synced successfully'
+      )
+    );
   } catch (error) {
     next(error);
   }

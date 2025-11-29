@@ -82,147 +82,31 @@ export const createCheckoutFromCart = async (
         );
       }
 
-      // Check for existing reserved tickets for this user and competition
-      const existingReservations = await Ticket.find({
-        competitionId: competition._id,
-        userId: req.user._id,
-        status: TicketStatus.RESERVED,
-        reservedUntil: { $gt: now },
-      }).sort({ ticketNumber: 1 });
-
-      let ticketsReserved: number[] = [];
-
-      // If we have valid reservations, use them
-      if (existingReservations.length >= cartItem.quantity) {
-        // Use existing reservations (take the first N)
-        ticketsReserved = existingReservations
-          .slice(0, cartItem.quantity)
-          .map((t) => t.ticketNumber);
-        
-        // If we have more reservations than needed, delete the extras
-        if (existingReservations.length > cartItem.quantity) {
-          const extras = existingReservations.slice(cartItem.quantity);
-          await Ticket.deleteMany({
-            _id: { $in: extras.map((t) => t._id) },
-          });
-        }
-      } else {
-        // Need to reserve tickets (either none exist or some expired)
-        // First, clean up any expired reservations for this user
-        await Ticket.deleteMany({
-          competitionId: competition._id,
-          userId: req.user._id,
-          status: TicketStatus.RESERVED,
-          $or: [
-            { reservedUntil: { $lt: now } },
-            { reservedUntil: { $exists: false } },
-          ],
-        });
-
-        // Check remaining tickets (excluding expired reservations)
-        const reservedCount = await Ticket.countDocuments({
-          competitionId: competition._id,
-          status: TicketStatus.RESERVED,
-          reservedUntil: { $gt: now },
-        });
-
-        const activeTicketsCount = await Ticket.countDocuments({
-          competitionId: competition._id,
-          status: { $in: [TicketStatus.ACTIVE, TicketStatus.WINNER] },
-        });
-
-      const availableTickets =
-        competition.ticketLimit !== null
-            ? competition.ticketLimit - activeTicketsCount
-          : Infinity;
-
-        const totalAvailable =
-          availableTickets === Infinity
-            ? Infinity
-            : availableTickets - reservedCount;
-
-        if (totalAvailable !== Infinity && cartItem.quantity > totalAvailable) {
+      // Tickets should already be reserved in cart - use cart item's ticket numbers
+      if (!cartItem.ticketNumbers || cartItem.ticketNumbers.length !== cartItem.quantity) {
         throw new ApiError(
-            `Only ${totalAvailable} tickets remaining for ${competition.title}. Please remove some items from your cart.`,
+          `Tickets for ${competition.title} are not properly reserved. Please remove and re-add to cart.`,
           400
         );
       }
 
-        // Try to reserve tickets using the improved reservation system
-        try {
-          // Find and reserve available ticket numbers
-          const reservedUntil = new Date(now.getTime() + 15 * 60 * 1000); // 15 minutes
-          
-          // Get all existing ticket numbers
-          const existingTickets = await Ticket.find({
-            competitionId: competition._id,
-            $or: [
-              { status: { $in: [TicketStatus.ACTIVE, TicketStatus.WINNER] } },
-              {
-                status: TicketStatus.RESERVED,
-                reservedUntil: { $gt: now },
-              },
-            ],
-          })
-            .select('ticketNumber')
-            .sort({ ticketNumber: 1 })
-            .lean();
+      // Verify reserved tickets exist and are still valid
+      const existingReservations = await Ticket.find({
+        competitionId: competition._id,
+        userId: req.user._id,
+        ticketNumber: { $in: cartItem.ticketNumbers },
+        status: TicketStatus.RESERVED,
+        reservedUntil: { $gt: now },
+      });
 
-          const existingNumbers = new Set(
-            existingTickets.map((t: any) => t.ticketNumber)
-          );
-
-          // Find available ticket numbers
-          const availableNumbers: number[] = [];
-          let candidate = 1;
-
-          while (availableNumbers.length < cartItem.quantity) {
-            if (!existingNumbers.has(candidate)) {
-              availableNumbers.push(candidate);
-            }
-            candidate++;
-
-            if (candidate > 1000000) {
-              throw new ApiError(
-                'Unable to find available ticket numbers',
-                500
-              );
-            }
-          }
-
-          // Reserve tickets atomically
-          const ticketsToCreate = availableNumbers.map((ticketNumber) => ({
-            competitionId: competition._id,
-            ticketNumber,
-            userId: req.user!._id, // Already checked at top of function
-            status: TicketStatus.RESERVED,
-            reservedUntil,
-          }));
-
-          try {
-            await Ticket.insertMany(ticketsToCreate, { ordered: false });
-            ticketsReserved = availableNumbers;
-          } catch (insertError: any) {
-            if (insertError.code === 11000) {
-              // Duplicate key - tickets were taken, try again or fail
-              throw new ApiError(
-                `Tickets for ${competition.title} are no longer available. Please try again.`,
-                409
-              );
-            }
-            throw insertError;
-          }
-        } catch (reserveError: any) {
-          if (reserveError instanceof ApiError) {
-            throw reserveError;
-          }
-          logger.error('Error reserving tickets during checkout:', reserveError);
-          throw new ApiError(
-            `Unable to reserve tickets for ${competition.title}. Please try again.`,
-            500
-          );
-        }
+      if (existingReservations.length !== cartItem.quantity) {
+        throw new ApiError(
+          `Some reserved tickets for ${competition.title} have expired. Please remove and re-add to cart.`,
+          400
+        );
       }
+
+      const ticketsReserved = cartItem.ticketNumbers;
 
       // Calculate amount in decimal
       const ticketPrice = competition.ticketPrice || ((competition as any).ticketPricePence ? (competition as any).ticketPricePence / 100 : 0);

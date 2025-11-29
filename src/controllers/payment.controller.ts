@@ -52,13 +52,16 @@ export const createSquarePayment = async (
         throw new ApiError('Order not found', 404);
       }
 
-      // Check authorization if user is authenticated
+      // Check authorization:
+      // - If order has userId and user is authenticated, they must match
+      // - If order has no userId (guest order), anyone can access with order ID
+      // - If user is authenticated but order is guest, allow (user can pay for guest order)
       if (
         req.user &&
         order.userId &&
         order.userId.toString() !== String(req.user._id)
       ) {
-        throw new ApiError('Not authorized', 403);
+        throw new ApiError('Not authorized to access this order', 403);
       }
     }
 
@@ -184,11 +187,31 @@ export const confirmPayment = async (
       if (!order) {
         throw new ApiError('Order not found', 404);
       }
+      
+      // Check authorization:
+      // - If order has userId and user is authenticated, they must match
+      // - If order has no userId (guest order), anyone can access with order ID
+      if (
+        req.user &&
+        order.userId &&
+        order.userId.toString() !== String(req.user._id)
+      ) {
+        throw new ApiError('Not authorized to access this order', 403);
+      }
     } else if (paymentId) {
       order = await Order.findOne({ squarePaymentId: paymentId });
       if (!order) {
         logger.warn(`Order not found for Square payment ${paymentId}`);
         throw new ApiError('Order not found for this payment', 404);
+      }
+      
+      // Check authorization for payment ID lookup
+      if (
+        req.user &&
+        order.userId &&
+        order.userId.toString() !== String(req.user._id)
+      ) {
+        throw new ApiError('Not authorized to access this order', 403);
       }
     }
 
@@ -403,66 +426,15 @@ export async function handlePaymentSuccess(
       }
     );
 
-    // If no tickets were updated, check if tickets exist at all
+    // Tickets should already exist from cart - if not found, it's an error
     if (updateResult.matchedCount === 0) {
-      logger.warn(
-        `No RESERVED tickets found for order ${order._id}, checking if tickets exist`
+      logger.error(
+        `No RESERVED tickets found for order ${order._id}. Tickets should have been created when adding to cart.`
       );
-
-      // Check if any tickets exist with these numbers (regardless of status)
-      const existingTickets = await Ticket.find({
-        competitionId: order.competitionId,
-        ticketNumber: { $in: order.ticketsReserved },
-      });
-
-      const existingNumbers = new Set(
-        existingTickets.map((t) => t.ticketNumber)
+      throw new ApiError(
+        'Tickets not found. Please ensure items were added to cart before checkout.',
+        400
       );
-      const missingNumbers = order.ticketsReserved.filter(
-        (num) => !existingNumbers.has(num)
-      );
-
-      // If tickets don't exist, create them as ACTIVE
-      if (missingNumbers.length > 0) {
-        logger.info(
-          `Creating ${missingNumbers.length} missing tickets for order ${order._id}`
-        );
-        const ticketsToCreate = missingNumbers.map((ticketNumber) => ({
-          competitionId: order.competitionId,
-          ticketNumber,
-          status: TicketStatus.ACTIVE,
-          orderId: order._id,
-          userId: order.userId || null,
-          isValid: isValid, // Set isValid based on answer correctness
-        }));
-
-        await Ticket.insertMany(ticketsToCreate);
-        logger.info(
-          `Created ${missingNumbers.length} tickets for order ${order._id}`
-        );
-      }
-
-      // Update any existing tickets that aren't already ACTIVE
-      if (existingTickets.length > 0) {
-        await Ticket.updateMany(
-          {
-            competitionId: order.competitionId,
-            ticketNumber: { $in: order.ticketsReserved },
-            status: { $ne: TicketStatus.ACTIVE }, // Only update if not already ACTIVE
-          },
-          {
-            $set: {
-              status: TicketStatus.ACTIVE,
-              orderId: order._id,
-              userId: order.userId || null,
-              isValid: isValid, // Set isValid based on answer correctness
-            },
-            $unset: {
-              reservedUntil: 1,
-            },
-          }
-        );
-      }
     }
 
     // Log the update for debugging

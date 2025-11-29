@@ -112,21 +112,20 @@ export const getOrderById = async (
       throw new ApiError('Order not found', 404);
     }
 
-    if (!req.user) {
-      throw new ApiError('Not authorized', 401);
-    }
+    // Check authorization
+    const requesterId = req.user ? String(req.user._id) : null;
+    const isAdmin = req.user
+      ? [UserRole.ADMIN, UserRole.SUPER_ADMIN].includes(req.user.role)
+      : false;
 
-    const isAdmin = [UserRole.ADMIN, UserRole.SUPER_ADMIN].includes(
-      req.user.role
-    );
-
-    const requesterId = String(req.user._id);
-
-    // Check authorization - allow if user matches or is admin, or if no userId (guest order)
     const orderUserId = order.userId?.toString();
-    const isOrderOwner = orderUserId === requesterId;
+    const isOrderOwner = orderUserId && requesterId && orderUserId === requesterId;
     const isGuestOrder = !orderUserId;
 
+    // Allow access if:
+    // 1. User is admin
+    // 2. User owns the order
+    // 3. Order is a guest order (no userId) - anyone can access with order ID
     if (!isAdmin && !isOrderOwner && !isGuestOrder) {
       throw new ApiError('Not authorized to access this order', 403);
     }
@@ -323,134 +322,71 @@ export const createOrder = async (
       );
     }
 
-    // Reserve tickets automatically if not provided
-    let finalTicketsReserved: number[] = [];
+    // Tickets must be provided
+    if (!ticketsReserved || !Array.isArray(ticketsReserved) || ticketsReserved.length === 0) {
+      throw new ApiError(
+        'ticketsReserved array is required and must contain ticket numbers',
+        400
+      );
+    }
 
-    if (
-      ticketsReserved &&
-      Array.isArray(ticketsReserved) &&
-      ticketsReserved.length > 0
-    ) {
-      // Verify provided reserved tickets exist and are still reserved
+    if (ticketsReserved.length !== qty) {
+      throw new ApiError(
+        `ticketsReserved array length (${ticketsReserved.length}) must match quantity (${qty})`,
+        400
+      );
+    }
+
+    // Check if tickets are already reserved or need to be reserved
+    const existingTickets = await Ticket.find({
+      competitionId,
+      ticketNumber: { $in: ticketsReserved },
+    });
+
+    const existingNumbers = new Set(
+      existingTickets.map((t) => t.ticketNumber)
+    );
+
+    // Check if any tickets are already taken (ACTIVE or WINNER)
+    const takenTickets = existingTickets.filter(
+      (t) => t.status === TicketStatus.ACTIVE || t.status === TicketStatus.WINNER
+    );
+
+    if (takenTickets.length > 0) {
+      const takenNumbers = takenTickets.map((t) => t.ticketNumber);
+      throw new ApiError(
+        `Ticket number(s) ${takenNumbers.join(', ')} are already purchased. Please select different tickets.`,
+        400
+      );
+    }
+
+    // Verify provided reserved tickets exist and are still reserved, or reserve them if they don't exist
     const reservedTickets = await Ticket.find({
       competitionId,
       ticketNumber: { $in: ticketsReserved },
       status: TicketStatus.RESERVED,
-        reservedUntil: { $gt: now },
+      reservedUntil: { $gt: now },
     });
 
-    if (reservedTickets.length !== qty) {
-        // Get detailed information about what happened to the tickets
-        const allTickets = await Ticket.find({
-          competitionId,
-          ticketNumber: { $in: ticketsReserved },
-        }).lean();
+    // If tickets don't exist or are expired, reserve them now (for guest checkout)
+    const missingNumbers = ticketsReserved.filter(
+      (num) => !existingNumbers.has(num)
+    );
 
-        const foundNumbers = new Set(
-          allTickets.map((t: any) => t.ticketNumber)
-        );
-        const missingNumbers = (ticketsReserved as number[]).filter(
-          (num: number) => !foundNumbers.has(num)
-        );
+    const expiredTickets = existingTickets.filter(
+      (t) =>
+        t.status === TicketStatus.RESERVED &&
+        t.reservedUntil &&
+        new Date(t.reservedUntil) <= now
+    );
 
-        const expiredTickets = allTickets.filter(
-          (t: any) =>
-            t.status === TicketStatus.RESERVED &&
-            t.reservedUntil &&
-            new Date(t.reservedUntil) <= now
-        );
+    const expiredNumbers = expiredTickets.map((t) => t.ticketNumber);
+    const numbersToReserve = [...missingNumbers, ...expiredNumbers];
 
-        const purchasedTickets = allTickets.filter(
-          (t: any) =>
-            t.status === TicketStatus.ACTIVE || t.status === TicketStatus.WINNER
-        );
-
-        // Build detailed error message
-        let errorMessage = 'Some reserved tickets are no longer available. ';
-        const details: string[] = [];
-
-        if (missingNumbers.length > 0) {
-          details.push(
-            `${missingNumbers.length} ticket(s) not found in database`
-          );
-        }
-        if (expiredTickets.length > 0) {
-          details.push(
-            `${expiredTickets.length} ticket(s) reservation expired`
-          );
-        }
-        if (purchasedTickets.length > 0) {
-          details.push(
-            `${purchasedTickets.length} ticket(s) already purchased`
-          );
-        }
-
-        if (details.length > 0) {
-          errorMessage += `Details: ${details.join(', ')}.`;
-        }
-
-        errorMessage += ' Please refresh and try again.';
-
-        // Log detailed information for debugging
-        logger.warn('Reserved tickets validation failed', {
-          competitionId,
-          requestedTickets: ticketsReserved,
-          requestedQuantity: qty,
-          foundReserved: reservedTickets.length,
-          missingNumbers,
-          expiredCount: expiredTickets.length,
-          purchasedCount: purchasedTickets.length,
-          allTicketsStatus: allTickets.map((t: any) => ({
-            ticketNumber: t.ticketNumber,
-            status: t.status,
-            reservedUntil: t.reservedUntil,
-          })),
-        });
-
-        throw new ApiError(errorMessage, 400);
-      }
-
-      finalTicketsReserved = ticketsReserved;
-    } else {
-      // Automatically reserve tickets - find available ticket numbers
+    if (numbersToReserve.length > 0) {
+      // Reserve missing/expired tickets
       const reservedUntil = new Date(now.getTime() + 15 * 60 * 1000); // 15 minutes
-
-      // Get all existing ticket numbers (active, winner, or validly reserved)
-      const existingTickets = await Ticket.find({
-        competitionId,
-        $or: [
-          { status: { $in: [TicketStatus.ACTIVE, TicketStatus.WINNER] } },
-          {
-            status: TicketStatus.RESERVED,
-            reservedUntil: { $gt: now },
-          },
-        ],
-      })
-        .select('ticketNumber')
-        .sort({ ticketNumber: 1 })
-        .lean();
-
-      const existingNumbers = new Set(
-        existingTickets.map((t: any) => t.ticketNumber)
-      );
-
-      // Find available ticket numbers
-      const availableNumbers: number[] = [];
-      let candidate = 1;
-
-      while (availableNumbers.length < qty) {
-        if (!existingNumbers.has(candidate)) {
-          availableNumbers.push(candidate);
-        }
-        candidate++;
-
-        if (candidate > 1000000) {
-          throw new ApiError('Unable to find available ticket numbers', 500);
-        }
-      }
-
-      // Reserve tickets atomically
-      const ticketsToCreate = availableNumbers.map((ticketNumber) => ({
+      const ticketsToCreate = numbersToReserve.map((ticketNumber) => ({
         competitionId,
         ticketNumber,
         userId: req.user?._id || undefined,
@@ -460,31 +396,107 @@ export const createOrder = async (
 
       try {
         await Ticket.insertMany(ticketsToCreate, { ordered: false });
-        finalTicketsReserved = availableNumbers;
         logger.info(
-          `Auto-reserved ${availableNumbers.length} tickets for order creation`,
+          `Auto-reserved ${numbersToReserve.length} tickets for order creation`,
           {
             competitionId,
-            ticketNumbers: availableNumbers,
+            ticketNumbers: numbersToReserve,
             userId: req.user?._id,
           }
         );
       } catch (insertError: any) {
         if (insertError.code === 11000) {
-          // Duplicate key - tickets were taken by another request
-          logger.warn('Tickets taken by concurrent request, retrying...', {
-            competitionId,
-            attemptedNumbers: availableNumbers,
-          });
           throw new ApiError(
-            'Tickets are no longer available. Please try again.',
+            'Some tickets are no longer available. Please try again.',
             409
           );
         }
-        logger.error('Error auto-reserving tickets:', insertError);
-        throw new ApiError('Failed to reserve tickets. Please try again.', 500);
+        throw insertError;
       }
     }
+
+    // Verify all tickets are now reserved
+    const finalReservedTickets = await Ticket.find({
+      competitionId,
+      ticketNumber: { $in: ticketsReserved },
+      status: TicketStatus.RESERVED,
+      reservedUntil: { $gt: now },
+    });
+
+    if (finalReservedTickets.length !== qty) {
+      // Get detailed information about what happened to the tickets
+      const allTickets = await Ticket.find({
+        competitionId,
+        ticketNumber: { $in: ticketsReserved },
+      }).lean();
+
+      const foundNumbers = new Set(
+        allTickets.map((t: any) => t.ticketNumber)
+      );
+      const missingNumbers = (ticketsReserved as number[]).filter(
+        (num: number) => !foundNumbers.has(num)
+      );
+
+      const expiredTickets = allTickets.filter(
+        (t: any) =>
+          t.status === TicketStatus.RESERVED &&
+          t.reservedUntil &&
+          new Date(t.reservedUntil) <= now
+      );
+
+      const purchasedTickets = allTickets.filter(
+        (t: any) =>
+          t.status === TicketStatus.ACTIVE || t.status === TicketStatus.WINNER
+      );
+
+      // Build detailed error message
+      let errorMessage = 'Unable to reserve all tickets. ';
+      const details: string[] = [];
+
+      const allTicketsAfterReserve = await Ticket.find({
+        competitionId,
+        ticketNumber: { $in: ticketsReserved },
+      }).lean();
+
+      const foundAfterReserve = new Set(
+        allTicketsAfterReserve.map((t: any) => t.ticketNumber)
+      );
+      const stillMissing = ticketsReserved.filter(
+        (num) => !foundAfterReserve.has(num)
+      );
+
+      if (stillMissing.length > 0) {
+        details.push(
+          `${stillMissing.length} ticket(s) could not be reserved`
+        );
+      }
+
+      if (details.length > 0) {
+        errorMessage += `Details: ${details.join(', ')}.`;
+      }
+
+      errorMessage += ' Please try again or select different tickets.';
+
+      // Log detailed information for debugging
+      logger.warn('Reserved tickets validation failed', {
+        competitionId,
+        requestedTickets: ticketsReserved,
+        requestedQuantity: qty,
+        foundReserved: reservedTickets.length,
+        missingNumbers,
+        expiredCount: expiredTickets.length,
+        purchasedCount: purchasedTickets.length,
+        allTicketsStatus: allTickets.map((t: any) => ({
+          ticketNumber: t.ticketNumber,
+          status: t.status,
+          reservedUntil: t.reservedUntil,
+        })),
+      });
+
+      throw new ApiError(errorMessage, 400);
+    }
+
+    const finalTicketsReserved = ticketsReserved;
 
     // Calculate amount
     const ticketPrice =

@@ -14,13 +14,16 @@ const router = Router();
 // Uses optionalAuth to set userId if user is logged in
 router.post('/', optionalAuth, createOrder);
 
-// Protected routes
+// Get order by ID - supports both authenticated and guest checkout
+// Guest orders (no userId) can be accessed by anyone with the order ID
+router.get('/:id', optionalAuth, getOrderById);
+
+// Protected routes (require authentication)
 router.use(protect);
 
-// Customer routes
+// Customer routes (authenticated only)
 router.get('/', getMyOrders);
 router.get('/my-orders', getMyOrders);
-router.get('/:id', getOrderById);
 
 // Admin routes
 router.get('/admin/all', adminOnly, getAllOrdersForAdmin);

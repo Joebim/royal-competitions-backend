@@ -3,6 +3,7 @@ import Joi from 'joi';
 export const addCartItemSchema = Joi.object({
   competitionId: Joi.string().required(),
   quantity: Joi.number().integer().min(1).max(20).required(),
+  ticketType: Joi.string().valid('lucky_draw', 'number_picker').optional(),
   ticketNumbers: Joi.array()
     .items(Joi.number().integer().min(1))
     .optional()
@@ -22,6 +23,7 @@ export const addCartItemSchema = Joi.object({
 
 export const updateCartItemSchema = Joi.object({
   quantity: Joi.number().integer().min(1).max(20).required(),
+  ticketType: Joi.string().valid('lucky_draw', 'number_picker').optional(),
   ticketNumbers: Joi.array()
     .items(Joi.number().integer().min(1))
     .optional()
@@ -38,6 +40,21 @@ export const updateCartItemSchema = Joi.object({
       'any.invalid':
         'Ticket numbers array length must match quantity',
     }),
+});
+
+export const syncCartSchema = Joi.object({
+  localCartItems: Joi.array()
+    .items(
+      Joi.object({
+        competitionId: Joi.string().required(),
+        quantity: Joi.number().integer().min(1).max(20).required(),
+        ticketNumbers: Joi.array()
+          .items(Joi.number().integer().min(1))
+          .optional()
+          .allow(null),
+      })
+    )
+    .required(),
 });
 
 
