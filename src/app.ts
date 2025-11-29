@@ -10,6 +10,7 @@ import routes from './routes';
 import swaggerSpec from './config/swagger';
 import { handleWebhook } from './controllers/payment.controller';
 import { errorHandler } from './middleware/errorHandler.middleware';
+import { rateLimiter } from './middleware/rateLimiter.middleware';
 import logger from './utils/logger';
 import { ApiError } from './utils/apiError';
 
@@ -62,8 +63,8 @@ if (config.nodeEnv === 'development') {
   );
 }
 
-// Rate limiting - DISABLED
-// app.use('/api', rateLimiter);
+// Rate limiting - Short wait time (1 minute window, 100 requests)
+app.use('/api', rateLimiter);
 
 // Health check route
 app.get('/health', (_req: Request, res: Response) => {

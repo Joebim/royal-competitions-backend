@@ -474,10 +474,22 @@ export const refreshToken = async (
   next: NextFunction
 ) => {
   try {
+    // Check for refresh token in cookies
     const refreshToken = req.cookies.refreshToken;
 
     if (!refreshToken) {
-      throw new ApiError('Refresh token not provided', 401);
+      // Log for debugging
+      logger.warn('Refresh token not found in cookies', {
+        cookies: Object.keys(req.cookies),
+        headers: {
+          cookie: req.headers.cookie ? 'present' : 'missing',
+          origin: req.headers.origin,
+        },
+      });
+      throw new ApiError(
+        'Your session has expired. Please log in again to continue.',
+        401
+      );
     }
 
     // Verify refresh token
