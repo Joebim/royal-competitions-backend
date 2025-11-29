@@ -106,27 +106,22 @@ export const getOrderById = async (
   next: NextFunction
 ) => {
   try {
+    if (!req.user) {
+      throw new ApiError('Not authorized', 401);
+    }
+
     const order = await Order.findById(req.params.id);
 
     if (!order) {
       throw new ApiError('Order not found', 404);
     }
 
-    // Check authorization
-    const requesterId = req.user ? String(req.user._id) : null;
-    const isAdmin = req.user
-      ? [UserRole.ADMIN, UserRole.SUPER_ADMIN].includes(req.user.role)
-      : false;
-
+    // Check authorization - user must own the order or be admin
+    const isAdmin = [UserRole.ADMIN, UserRole.SUPER_ADMIN].includes(req.user.role);
     const orderUserId = order.userId?.toString();
-    const isOrderOwner = orderUserId && requesterId && orderUserId === requesterId;
-    const isGuestOrder = !orderUserId;
+    const isOrderOwner = orderUserId && orderUserId === String(req.user._id);
 
-    // Allow access if:
-    // 1. User is admin
-    // 2. User owns the order
-    // 3. Order is a guest order (no userId) - anyone can access with order ID
-    if (!isAdmin && !isOrderOwner && !isGuestOrder) {
+    if (!isAdmin && !isOrderOwner) {
       throw new ApiError('Not authorized to access this order', 403);
     }
 
@@ -247,6 +242,9 @@ export const createOrder = async (
   next: NextFunction
 ) => {
   try {
+    if (!req.user) {
+      throw new ApiError('Not authorized', 401);
+    }
     const {
       competitionId,
       qty,
@@ -389,7 +387,7 @@ export const createOrder = async (
       const ticketsToCreate = numbersToReserve.map((ticketNumber) => ({
         competitionId,
         ticketNumber,
-        userId: req.user?._id || undefined,
+        userId: req.user!._id, // Already validated at top of function
         status: TicketStatus.RESERVED,
         reservedUntil,
       }));
@@ -401,7 +399,7 @@ export const createOrder = async (
           {
             competitionId,
             ticketNumbers: numbersToReserve,
-            userId: req.user?._id,
+            userId: req.user._id,
           }
         );
       } catch (insertError: any) {
@@ -585,7 +583,7 @@ export const createOrder = async (
     // Send order confirmation email
     if (billingDetails?.email) {
       try {
-        const user = req.user?._id ? await User.findById(req.user._id) : null;
+        const user = await User.findById(req.user._id);
         await emailService.sendOrderConfirmationEmail({
           email: billingDetails.email,
           firstName:

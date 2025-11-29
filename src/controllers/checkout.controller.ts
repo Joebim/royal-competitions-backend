@@ -201,6 +201,10 @@ export const createCheckoutPaymentIntent = async (
   next: NextFunction
 ) => {
   try {
+    if (!req.user) {
+      throw new ApiError('Not authorized', 401);
+    }
+
     const { orderId, billingDetails, shippingAddress, marketingOptIn } =
       req.body;
 
@@ -213,13 +217,8 @@ export const createCheckoutPaymentIntent = async (
       throw new ApiError('Order not found', 404);
     }
 
-    // Check authorization - userId is optional for guest checkout
-    const requesterId = req.user ? String(req.user._id) : null;
-    if (
-      order.userId &&
-      requesterId &&
-      order.userId.toString() !== requesterId
-    ) {
+    // Check authorization - user must own the order
+    if (order.userId && order.userId.toString() !== String(req.user._id)) {
       throw new ApiError('Not authorized', 403);
     }
 
@@ -311,6 +310,10 @@ export const confirmCheckoutOrder = async (
   next: NextFunction
 ) => {
   try {
+    if (!req.user) {
+      throw new ApiError('Not authorized', 401);
+    }
+
     const { orderId, paymentId } = req.body;
 
     if (!orderId && !paymentId) {
@@ -328,13 +331,12 @@ export const confirmCheckoutOrder = async (
       throw new ApiError('Order not found', 404);
     }
 
-    // Check authorization
-    const requesterId = req.user ? String(req.user._id) : null;
-    if (
-      order.userId &&
-      requesterId &&
-      order.userId.toString() !== requesterId
-    ) {
+    // Check authorization - user must own the order
+    if (!req.user) {
+      throw new ApiError('Not authorized', 401);
+    }
+
+    if (order.userId && order.userId.toString() !== String(req.user._id)) {
       throw new ApiError('Not authorized', 403);
     }
 

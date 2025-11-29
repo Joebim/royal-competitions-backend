@@ -5,16 +5,19 @@ import {
   handleWebhook,
   fixOrderTickets,
 } from '../controllers/payment.controller';
-import { protect, adminOnly, optionalAuth } from '../middleware/auth.middleware';
+import { protect, adminOnly } from '../middleware/auth.middleware';
 
 const router = Router();
 
 // Webhook route (no auth required - Square webhook)
 router.post('/webhook', handleWebhook);
 
-// Square payment routes - support both authenticated and guest checkout
-router.post('/create-payment', optionalAuth, createSquarePayment); // Create Square payment
-router.post('/confirm-payment', optionalAuth, confirmPayment); // Confirm payment
+// All payment routes require authentication
+router.use(protect);
+
+// Square payment routes - require authentication
+router.post('/create-payment', createSquarePayment); // Create Square payment
+router.post('/confirm-payment', confirmPayment); // Confirm payment
 
 // Admin route to fix tickets for existing orders
 router.post(

@@ -3,7 +3,7 @@ import {
   confirmCheckoutOrder,
   createCheckoutPaymentIntent,
 } from '../controllers/checkout.controller';
-import { optionalAuth } from '../middleware/auth.middleware';
+import { protect } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validation.middleware';
 import {
   confirmCheckoutSchema,
@@ -12,14 +12,16 @@ import {
 
 const router = Router();
 
-// Checkout routes - support both authenticated and guest checkout
+// All checkout routes require authentication
+router.use(protect);
+
+// Checkout routes - require authentication
 router.post(
   '/payment-intent',
-  optionalAuth,
   validate(createPaymentIntentSchema),
   createCheckoutPaymentIntent
 );
-router.post('/confirm', optionalAuth, validate(confirmCheckoutSchema), confirmCheckoutOrder);
+router.post('/confirm', validate(confirmCheckoutSchema), confirmCheckoutOrder);
 
 export default router;
 

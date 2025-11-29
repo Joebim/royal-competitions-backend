@@ -34,6 +34,10 @@ export const createSquarePayment = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    if (!req.user) {
+      throw new ApiError('Not authorized', 401);
+    }
+
     const { sourceId, amount, orderId, idempotencyKey } = req.body;
 
     if (!sourceId) {
@@ -44,7 +48,7 @@ export const createSquarePayment = async (
       throw new ApiError('Amount or orderId is required', 400);
     }
 
-    // If orderId is provided, verify it exists
+    // If orderId is provided, verify it exists and user owns it
     let order = null;
     if (orderId) {
       order = await Order.findById(orderId);
@@ -52,15 +56,8 @@ export const createSquarePayment = async (
         throw new ApiError('Order not found', 404);
       }
 
-      // Check authorization:
-      // - If order has userId and user is authenticated, they must match
-      // - If order has no userId (guest order), anyone can access with order ID
-      // - If user is authenticated but order is guest, allow (user can pay for guest order)
-      if (
-        req.user &&
-        order.userId &&
-        order.userId.toString() !== String(req.user._id)
-      ) {
+      // Check authorization - user must own the order
+      if (order.userId && order.userId.toString() !== String(req.user._id)) {
         throw new ApiError('Not authorized to access this order', 403);
       }
     }
@@ -79,7 +76,7 @@ export const createSquarePayment = async (
       orderId: orderId || undefined,
       userId: order?.userId
         ? String(order.userId)
-        : req.user?._id?.toString() || 'guest',
+        : String(req.user._id),
       competitionId: order ? String(order.competitionId) : undefined,
       idempotencyKey: idempotencyKey || uuidv4(),
     });
@@ -92,7 +89,7 @@ export const createSquarePayment = async (
       // Create payment record
       await Payment.create({
         orderId: order._id,
-        userId: order.userId || req.user?._id,
+        userId: order.userId || req.user._id,
         amount: orderAmount,
         paymentIntentId: squarePayment.id,
         status: PaymentStatus.PENDING,
@@ -138,7 +135,7 @@ export const createSquarePayment = async (
             status: squarePayment.status,
             amount_money: squarePayment.amountMoney,
           },
-          req.user?._id
+          req.user._id
         );
       }
     }
@@ -174,6 +171,10 @@ export const confirmPayment = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    if (!req.user) {
+      throw new ApiError('Not authorized', 401);
+    }
+
     const { paymentId, orderId } = req.body;
 
     if (!paymentId && !orderId) {
@@ -188,14 +189,8 @@ export const confirmPayment = async (
         throw new ApiError('Order not found', 404);
       }
       
-      // Check authorization:
-      // - If order has userId and user is authenticated, they must match
-      // - If order has no userId (guest order), anyone can access with order ID
-      if (
-        req.user &&
-        order.userId &&
-        order.userId.toString() !== String(req.user._id)
-      ) {
+      // Check authorization - user must own the order
+      if (order.userId && order.userId.toString() !== String(req.user._id)) {
         throw new ApiError('Not authorized to access this order', 403);
       }
     } else if (paymentId) {
@@ -205,12 +200,8 @@ export const confirmPayment = async (
         throw new ApiError('Order not found for this payment', 404);
       }
       
-      // Check authorization for payment ID lookup
-      if (
-        req.user &&
-        order.userId &&
-        order.userId.toString() !== String(req.user._id)
-      ) {
+      // Check authorization for payment ID lookup - user must own the order
+      if (order.userId && order.userId.toString() !== String(req.user._id)) {
         throw new ApiError('Not authorized to access this order', 403);
       }
     }
@@ -243,21 +234,13 @@ export const confirmPayment = async (
     // Check if payment was successful
     if (squarePayment.status === 'COMPLETED') {
       if (order && squarePayment.status === 'COMPLETED') {
-        // If order doesn't have userId but user is authenticated, update order with userId
-        if (!order.userId && req.user?._id) {
-          order.userId = req.user._id as any;
-          await order.save();
-          logger.info(
-            `Updated order ${order._id} with userId ${req.user._id} from authenticated user`
-          );
-        }
         await handlePaymentSuccess(
           {
             id: squarePayment.id,
             status: squarePayment.status,
             amount_money: squarePayment.amountMoney,
           },
-          req.user?._id // Pass authenticated user ID if available
+          req.user._id
         );
       }
 
