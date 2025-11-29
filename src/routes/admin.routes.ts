@@ -16,6 +16,7 @@ import {
   updateDraw,
   verifyDraw,
   getAllDrawsForAdmin,
+  deleteDraw,
 } from '../controllers/draw.controller';
 import { getCompetitionTickets } from '../controllers/ticket.controller';
 import {
@@ -166,6 +167,7 @@ router.post('/competitions/:id/add-winner', addManualWinner);
 router.get('/competitions/:id/tickets', getCompetitionTickets);
 router.get('/draws/:id', getDraw);
 router.put('/draws/:id', validate(updateDrawSchema), updateDraw);
+router.delete('/draws/:id', deleteDraw);
 router.get('/draws/:id/verify', verifyDraw);
 
 // Champions management

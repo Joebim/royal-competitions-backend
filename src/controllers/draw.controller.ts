@@ -1097,6 +1097,75 @@ export const verifyDraw = async (
 };
 
 /**
+ * Delete draw (admin only)
+ * DELETE /api/v1/admin/draws/:id
+ */
+export const deleteDraw = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    if (!req.user) {
+      throw new ApiError('Not authorized', 401);
+    }
+
+    const drawId = req.params.id;
+
+    const draw = await Draw.findById(drawId);
+    if (!draw) {
+      throw new ApiError('Draw not found', 404);
+    }
+
+    // Check if draw has winners - warn but allow deletion
+    const winners = await Winner.find({ drawId: draw._id });
+    if (winners.length > 0) {
+      logger.warn(
+        `Deleting draw ${drawId} with ${winners.length} associated winner(s)`
+      );
+    }
+
+    // Delete associated winners
+    if (winners.length > 0) {
+      await Winner.deleteMany({ drawId: draw._id });
+      logger.info(`Deleted ${winners.length} winner(s) associated with draw ${drawId}`);
+    }
+
+    // Delete draw
+    await Draw.findByIdAndDelete(drawId);
+
+    // Create event log
+    await Event.create({
+      type: EventType.DRAW_CREATED, // Using existing event type
+      entity: 'draw',
+      entityId: draw._id,
+      competitionId: draw.competitionId,
+      userId: req.user._id,
+      payload: {
+        action: 'deleted',
+        drawId: drawId,
+        drawMethod: draw.drawMethod,
+        winnerCount: winners.length,
+      },
+    });
+
+    logger.info(`Draw ${drawId} deleted by admin ${req.user._id}`);
+
+    res.json(
+      ApiResponse.success(
+        {
+          drawId,
+          deletedWinners: winners.length,
+        },
+        'Draw deleted successfully'
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Automatic draw function (called by scheduled job)
  * This is not exposed as an API endpoint but used by jobs
  */
