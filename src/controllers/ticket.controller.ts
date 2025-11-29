@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
-import { Competition, Ticket, TicketStatus, Event, EventType } from '../models';
+import { Competition, Ticket, TicketStatus, Event, EventType, Entry } from '../models';
 import { CompetitionStatus } from '../models/Competition.model';
 import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
@@ -435,34 +435,88 @@ export const getCompetitionEntryList = async (
       throw new ApiError('Competition not found', 404);
     }
 
+    // Get all active tickets for this competition (without populate first to get raw IDs)
     const tickets = await Ticket.find({
       competitionId,
       status: TicketStatus.ACTIVE,
+    })
+      .sort({ ticketNumber: 1 })
+      .lean();
+
+    // Get existing entries to check which tickets already have entries
+    const existingEntries = await Entry.find({
+      competitionId,
+    }).select('ticketNumber').lean();
+
+    const existingTicketNumbers = new Set(
+      existingEntries.map((e: any) => String(e.ticketNumber))
+    );
+
+    // Create entries for tickets that don't have entries yet
+    const entriesToCreate = [];
+    for (const ticket of tickets) {
+      const ticketNumberStr = String(ticket.ticketNumber);
+      if (!existingTicketNumbers.has(ticketNumberStr) && ticket.userId && ticket.orderId) {
+        // Create entry for this ticket
+        // Use a default answer if competition has no question, or empty string
+        const defaultAnswer = competition.question?.correctAnswer || '';
+        const isCorrect = competition.question
+          ? false // Will be set to true only if user submits correct answer
+          : true; // If no question, default to correct
+
+        entriesToCreate.push({
+          userId: ticket.userId, // This is already an ObjectId from the ticket
+          competitionId: ticket.competitionId, // This is already an ObjectId
+          orderId: ticket.orderId, // This is already an ObjectId
+          ticketNumber: ticketNumberStr,
+          answer: defaultAnswer,
+          isCorrect: isCorrect,
+        });
+      }
+    }
+
+    // Bulk create entries if any need to be created
+    if (entriesToCreate.length > 0) {
+      try {
+        await Entry.insertMany(entriesToCreate, { ordered: false });
+        logger.info(
+          `Created ${entriesToCreate.length} entries for competition ${competitionId}`
+        );
+      } catch (insertError: any) {
+        // Handle duplicate key errors (some entries might have been created concurrently)
+        if (insertError.code !== 11000) {
+          logger.error('Error creating entries:', insertError);
+          // Continue anyway - we'll just show existing entries
+        }
+      }
+    }
+
+    // Get all entries (including newly created ones) for response
+    const allEntries = await Entry.find({
+      competitionId,
     })
       .populate(
         anonymize ? '' : 'userId',
         anonymize ? '' : 'firstName lastName email'
       )
+      .populate('orderId', 'orderNumber')
       .sort({ ticketNumber: 1 })
-      .select(
-        anonymize ? 'ticketNumber createdAt' : 'ticketNumber userId createdAt'
-      )
       .lean();
 
     // Format response
-    const entryList = tickets.map((ticket: any) => ({
-      ticketNumber: ticket.ticketNumber,
+    const entryList = allEntries.map((entry: any) => ({
+      ticketNumber: entry.ticketNumber,
       ...(anonymize
         ? {}
         : {
-            user: ticket.userId
+            user: entry.userId
               ? {
-                  name: `${ticket.userId.firstName} ${ticket.userId.lastName}`,
-                  email: ticket.userId.email,
+                  name: `${entry.userId.firstName} ${entry.userId.lastName}`,
+                  email: entry.userId.email,
                 }
               : null,
           }),
-      createdAt: ticket.createdAt,
+      createdAt: entry.createdAt,
     }));
 
     res.json(
@@ -472,6 +526,7 @@ export const getCompetitionEntryList = async (
             id: competition._id,
             title: competition.title,
             totalTickets: tickets.length,
+            totalEntries: allEntries.length,
           },
           entries: entryList,
         },

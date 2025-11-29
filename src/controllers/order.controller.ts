@@ -539,69 +539,7 @@ export const createOrder = async (
     // Order created - Square payment will be created when frontend calls /api/v1/payments/create-payment
     const orderId = String(order._id);
 
-    // Track "Started Checkout" event in Klaviyo
-    try {
-      const email = billingDetails?.email;
-      if (email) {
-        await klaviyoService.trackEvent(
-          email,
-          'Started Checkout',
-          {
-            competition_id: competitionId,
-            competition_name: competition.title,
-            order_id: orderId,
-            items: [
-              {
-                competition_id: competitionId,
-                competition_name: competition.title,
-                quantity: qty,
-                ticket_numbers: finalTicketsReserved,
-              },
-            ],
-          },
-          amount
-        );
-      }
-    } catch (error: any) {
-      logger.error('Error tracking Started Checkout event:', error);
-    }
-
-    // Create event log
-    await Event.create({
-      type: EventType.ORDER_CREATED,
-      entity: 'order',
-      entityId: order._id,
-      userId: req.user?._id,
-      competitionId,
-      payload: {
-        amount,
-        quantity: qty,
-        ticketsReserved: finalTicketsReserved,
-      },
-    });
-
-    // Send order confirmation email
-    if (billingDetails?.email) {
-      try {
-        const user = await User.findById(req.user._id);
-        await emailService.sendOrderConfirmationEmail({
-          email: billingDetails.email,
-          firstName:
-            user?.firstName || billingDetails.firstName || 'Valued Customer',
-          lastName: user?.lastName || billingDetails.lastName,
-          orderNumber: order.orderNumber,
-          competitionTitle: competition.title,
-          ticketNumbers: ticketsReserved,
-          amountGBP: amount.toFixed(2),
-          orderId: String(order._id),
-        });
-        logger.info(`Order confirmation email sent to ${billingDetails.email}`);
-      } catch (error: any) {
-        logger.error('Error sending order confirmation email:', error);
-        // Don't fail order creation if email fails
-      }
-    }
-
+    // Send response immediately to prevent timeout
     res.status(201).json(
       ApiResponse.success(
         {
@@ -611,6 +549,77 @@ export const createOrder = async (
         'Order created successfully'
       )
     );
+
+    // Process async operations after response is sent (non-blocking)
+    // This prevents timeout issues while still sending emails and tracking events
+    setImmediate(async () => {
+      try {
+        // Track "Started Checkout" event in Klaviyo
+        try {
+          const email = billingDetails?.email;
+          if (email) {
+            await klaviyoService.trackEvent(
+              email,
+              'Started Checkout',
+              {
+                competition_id: competitionId,
+                competition_name: competition.title,
+                order_id: orderId,
+                items: [
+                  {
+                    competition_id: competitionId,
+                    competition_name: competition.title,
+                    quantity: qty,
+                    ticket_numbers: finalTicketsReserved,
+                  },
+                ],
+              },
+              amount
+            );
+          }
+        } catch (error: any) {
+          logger.error('Error tracking Started Checkout event:', error);
+        }
+
+        // Create event log
+        await Event.create({
+          type: EventType.ORDER_CREATED,
+          entity: 'order',
+          entityId: order._id,
+          userId: req.user?._id,
+          competitionId,
+          payload: {
+            amount,
+            quantity: qty,
+            ticketsReserved: finalTicketsReserved,
+          },
+        });
+
+        // Send order confirmation email
+        if (billingDetails?.email) {
+          try {
+            const user = req.user?._id ? await User.findById(req.user._id) : null;
+            await emailService.sendOrderConfirmationEmail({
+              email: billingDetails.email,
+              firstName:
+                user?.firstName || billingDetails.firstName || 'Valued Customer',
+              lastName: user?.lastName || billingDetails.lastName,
+              orderNumber: order.orderNumber,
+              competitionTitle: competition.title,
+              ticketNumbers: ticketsReserved,
+              amountGBP: amount.toFixed(2),
+              orderId: String(order._id),
+            });
+            logger.info(`Order confirmation email sent to ${billingDetails.email}`);
+          } catch (error: any) {
+            logger.error('Error sending order confirmation email:', error);
+            // Don't fail order creation if email fails
+          }
+        }
+      } catch (error: any) {
+        logger.error('Error in async order processing:', error);
+      }
+    });
   } catch (error) {
     next(error);
   }

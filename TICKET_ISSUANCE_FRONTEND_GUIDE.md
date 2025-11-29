@@ -9,10 +9,12 @@ Tickets are now **issued immediately when adding items to cart**, not during che
 ## Key Changes
 
 ### Before
+
 - Tickets were created during checkout/payment
 - Users selected tickets but they weren't reserved until checkout
 
 ### After
+
 - ✅ **Tickets are issued when adding to cart** (status: `RESERVED`)
 - ✅ **Lucky Draw**: Random ticket selection
 - ✅ **Number Picker**: User selects specific ticket numbers
@@ -32,6 +34,7 @@ Tickets are now **issued immediately when adding items to cart**, not during che
 **Request Body:**
 
 #### Lucky Draw Mode (Random Selection)
+
 ```json
 {
   "competitionId": "competition_id",
@@ -42,6 +45,7 @@ Tickets are now **issued immediately when adding items to cart**, not during che
 ```
 
 #### Number Picker Mode (Specific Selection)
+
 ```json
 {
   "competitionId": "competition_id",
@@ -52,6 +56,7 @@ Tickets are now **issued immediately when adding items to cart**, not during che
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -89,6 +94,7 @@ Tickets are now **issued immediately when adding items to cart**, not during che
 **Error Responses:**
 
 #### Limited Tickets Available (Lucky Draw)
+
 ```json
 {
   "success": false,
@@ -98,6 +104,7 @@ Tickets are now **issued immediately when adding items to cart**, not during che
 ```
 
 #### Ticket Numbers Already Taken (Number Picker)
+
 ```json
 {
   "success": false,
@@ -364,7 +371,9 @@ export const useCart = () => {
       if (error.response?.status === 400 && data.ticketType === 'lucky_draw') {
         const message = error.response.data.message;
         // Extract available ticket numbers from error message
-        const availableNumbersMatch = message.match(/Available ticket numbers: ([\d,\s]+)/);
+        const availableNumbersMatch = message.match(
+          /Available ticket numbers: ([\d,\s]+)/
+        );
         if (availableNumbersMatch) {
           const numbers = availableNumbersMatch[1]
             .split(',')
@@ -448,7 +457,7 @@ try {
 } catch (error: any) {
   if (error.response?.status === 400) {
     const message = error.response.data.message;
-    
+
     // Check if it's a limited tickets error
     if (message.includes('Only') && message.includes('ticket(s) remaining')) {
       // Extract available numbers
@@ -458,12 +467,12 @@ try {
           .split(',')
           .map((n) => parseInt(n.trim()))
           .filter((n) => !isNaN(n));
-        
+
         // Show user-friendly message
         alert(
           `Only ${availableNumbers.length} tickets available. Please switch to number picker and select from: ${availableNumbers.slice(0, 20).join(', ')}${availableNumbers.length > 20 ? '...' : ''}`
         );
-        
+
         // Optionally switch to number picker mode
         setMode('number_picker');
         setAvailableNumbers(availableNumbers);
@@ -478,6 +487,7 @@ try {
 ## User Flow
 
 ### Lucky Draw Flow
+
 ```
 1. User selects "Lucky Draw" mode
 2. User selects quantity (e.g., 3 tickets)
@@ -489,6 +499,7 @@ try {
 ```
 
 ### Number Picker Flow
+
 ```
 1. User selects "Number Picker" mode
 2. User selects quantity (e.g., 3 tickets)
@@ -501,6 +512,7 @@ try {
 ```
 
 ### Limited Tickets Flow (Lucky Draw)
+
 ```
 1. User selects "Lucky Draw" mode
 2. User selects quantity (e.g., 5 tickets)
@@ -517,21 +529,25 @@ try {
 ## Best Practices
 
 ### 1. **Display Ticket Numbers in Cart**
+
 - ✅ Always show issued ticket numbers in cart
 - ✅ Sort ticket numbers for better readability
 - ✅ Highlight ticket numbers prominently
 
 ### 2. **Error Handling**
+
 - ✅ Handle limited tickets gracefully
 - ✅ Show available ticket numbers when lucky draw fails
 - ✅ Provide clear instructions to switch to number picker
 
 ### 3. **User Experience**
+
 - ✅ Show loading state during ticket issuance
 - ✅ Display ticket numbers immediately after adding to cart
 - ✅ Allow users to see which tickets they've selected
 
 ### 4. **Validation**
+
 - ✅ Validate ticket numbers before sending to API
 - ✅ Check quantity limits before adding to cart
 - ✅ Handle concurrent ticket selection gracefully
@@ -541,6 +557,7 @@ try {
 ## API Response Structure
 
 ### Cart Response with Tickets
+
 ```json
 {
   "success": true,
@@ -575,6 +592,7 @@ try {
 ## Testing
 
 ### Test Case 1: Lucky Draw Success
+
 ```javascript
 // Request
 POST /api/v1/cart/items
@@ -588,6 +606,7 @@ POST /api/v1/cart/items
 ```
 
 ### Test Case 2: Number Picker Success
+
 ```javascript
 // Request
 POST /api/v1/cart/items
@@ -602,6 +621,7 @@ POST /api/v1/cart/items
 ```
 
 ### Test Case 3: Limited Tickets (Lucky Draw)
+
 ```javascript
 // Request (only 2 tickets available)
 POST /api/v1/cart/items
@@ -615,6 +635,7 @@ POST /api/v1/cart/items
 ```
 
 ### Test Case 4: Ticket Already Taken (Number Picker)
+
 ```javascript
 // Request (ticket 5 already taken)
 POST /api/v1/cart/items
@@ -644,4 +665,3 @@ POST /api/v1/cart/items
 ---
 
 **Last Updated:** 2025-01-24
-

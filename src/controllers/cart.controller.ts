@@ -38,7 +38,9 @@ const formatCartResponse = async (cart: any) => {
         id: item._id,
         competitionId: item.competitionId,
         quantity: item.quantity,
-        ticketNumbers: item.ticketNumbers || [], // Array of issued ticket numbers
+        ticketNumbers: Array.isArray(item.ticketNumbers)
+          ? item.ticketNumbers
+          : [], // Array of issued ticket numbers (always included)
         unitPrice: item.unitPrice,
         subtotal: item.subtotal,
         addedAt: item.addedAt,
