@@ -37,6 +37,7 @@ const formatCartResponse = async (cart: any) => {
         id: item._id,
         competitionId: item.competitionId,
         quantity: item.quantity,
+        ticketNumbers: item.ticketNumbers || [], // Array of selected ticket numbers
         unitPrice: item.unitPrice,
         subtotal: item.subtotal,
         addedAt: item.addedAt,
@@ -141,7 +142,7 @@ export const addOrUpdateCartItem = async (
       throw new ApiError('Not authorized', 401);
     }
 
-    const { competitionId, quantity } = req.body;
+    const { competitionId, quantity, ticketNumbers } = req.body;
 
     if (!competitionId || !mongoose.Types.ObjectId.isValid(competitionId)) {
       throw new ApiError('Valid competitionId is required', 422);
@@ -199,14 +200,40 @@ export const addOrUpdateCartItem = async (
       item.competitionId.equals(competition._id)
     );
 
+    // Validate ticket numbers if provided
+    if (ticketNumbers) {
+      if (!Array.isArray(ticketNumbers)) {
+        throw new ApiError('ticketNumbers must be an array', 422);
+      }
+      if (ticketNumbers.length !== parsedQuantity) {
+        throw new ApiError(
+          `ticketNumbers array length (${ticketNumbers.length}) must match quantity (${parsedQuantity})`,
+          422
+        );
+      }
+      // Validate all ticket numbers are positive integers
+      if (
+        !ticketNumbers.every(
+          (num: any) => Number.isInteger(num) && num > 0
+        )
+      ) {
+        throw new ApiError(
+          'All ticket numbers must be positive integers',
+          422
+        );
+      }
+    }
+
     if (existingItem) {
       existingItem.quantity = parsedQuantity;
       existingItem.unitPrice = ticketPriceGBP;
+      existingItem.ticketNumbers = ticketNumbers || undefined;
       recalculateItemSubtotal(existingItem);
     } else {
       cart.items.push({
         competitionId: competition._id,
         quantity: parsedQuantity,
+        ticketNumbers: ticketNumbers || undefined,
         unitPrice: ticketPriceGBP,
         subtotal: Number((parsedQuantity * ticketPriceGBP).toFixed(2)),
       } as any);
@@ -237,7 +264,7 @@ export const updateCartItem = async (
       throw new ApiError('Not authorized', 401);
     }
 
-    const { quantity } = req.body;
+    const { quantity, ticketNumbers } = req.body;
     const parsedQuantity = Number(quantity);
 
     if (!parsedQuantity || parsedQuantity < 1) {
@@ -291,8 +318,32 @@ export const updateCartItem = async (
         ? (competition as any).ticketPricePence / 100
         : 0);
 
+    // Validate ticket numbers if provided
+    if (ticketNumbers !== undefined) {
+      if (ticketNumbers !== null && !Array.isArray(ticketNumbers)) {
+        throw new ApiError('ticketNumbers must be an array or null', 422);
+      }
+      if (ticketNumbers && ticketNumbers.length !== parsedQuantity) {
+        throw new ApiError(
+          `ticketNumbers array length (${ticketNumbers.length}) must match quantity (${parsedQuantity})`,
+          422
+        );
+      }
+      // Validate all ticket numbers are positive integers
+      if (
+        ticketNumbers &&
+        !ticketNumbers.every((num: any) => Number.isInteger(num) && num > 0)
+      ) {
+        throw new ApiError(
+          'All ticket numbers must be positive integers',
+          422
+        );
+      }
+    }
+
     item.quantity = parsedQuantity;
     item.unitPrice = ticketPriceGBP;
+    item.ticketNumbers = ticketNumbers !== undefined ? (ticketNumbers || undefined) : item.ticketNumbers;
     recalculateItemSubtotal(item);
 
     await cart.save();

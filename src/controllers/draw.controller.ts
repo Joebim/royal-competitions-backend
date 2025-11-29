@@ -10,7 +10,7 @@ import {
   User,
 } from '../models';
 import { CompetitionStatus, DrawMode } from '../models/Competition.model';
-import { DrawMethod } from '../models/Draw.model';
+import { DrawMethod, IDrawResult } from '../models/Draw.model';
 import { TicketStatus } from '../models/Ticket.model';
 import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
@@ -112,14 +112,33 @@ export const runDraw = async (
 
       // Run draw
       const totalWinners = numWinners + reserveWinners;
-      const drawResult = await drawService.runDraw({
-        competitionId,
-        numWinners: totalWinners,
-      });
+      let drawResult;
+      let results: IDrawResult[] = [];
+      let snapshot: any[] = [];
+      let seed: string = drawService.generateSeed();
+      let drawError: string | undefined;
 
-      const { results, snapshot, seed } = drawResult;
+      try {
+        drawResult = await drawService.runDraw({
+          competitionId,
+          numWinners: totalWinners,
+        });
+        results = drawResult.results;
+        snapshot = drawResult.snapshot;
+        seed = drawResult.seed;
+      } catch (error: any) {
+        // If draw fails (e.g., no tickets), still create draw record for audit
+        logger.warn(`Draw execution failed: ${error.message}. Creating draw record with empty results.`);
+        drawError = error.message;
+        // Create empty snapshot for audit
+        snapshot = [];
+      }
 
-      // Create draw record
+      // Create draw record (always create, even if draw failed or no winners found)
+      const notes = drawError 
+        ? `${req.body.notes || ''} [Draw Error: ${drawError}]`.trim()
+        : req.body.notes;
+      
       const draw = await drawService.createDrawRecord(
         competitionId,
         seed,
@@ -127,11 +146,71 @@ export const runDraw = async (
         snapshot,
         DrawMethod.ADMIN_TRIGGERED,
         userId,
-        req.body.notes,
+        notes,
         undefined, // evidenceUrl (not used for admin-triggered)
         liveUrl,
         urlType
       );
+
+      // If no winners found, still update competition and create event
+      if (results.length === 0) {
+        logger.warn(
+          `No winners found for competition ${competitionId}. Draw record created for audit purposes.`
+        );
+
+        // Update competition status
+        competition.status = CompetitionStatus.DRAWN;
+        competition.drawnAt = new Date();
+        if (isRealSession) {
+          await competition.save({ session });
+        } else {
+          await competition.save();
+        }
+
+        // Create event log
+        const drawEventOptions = isRealSession ? { session } : {};
+        await Event.create(
+          [
+            {
+              type: EventType.DRAW_CREATED,
+              entity: 'draw',
+              entityId: draw._id,
+              competitionId,
+              payload: {
+                drawMethod: DrawMethod.ADMIN_TRIGGERED,
+                numWinners,
+                reserveWinners,
+                seed,
+                algorithm: 'hmac-sha256-v1',
+                note: drawError || 'No winners found - no tickets available',
+              },
+            },
+          ],
+          drawEventOptions
+        );
+
+        res.json(
+          ApiResponse.success(
+            {
+              draw: {
+                id: draw._id,
+                competitionId,
+                drawTime: draw.drawTime,
+                seed: draw.seed,
+                algorithm: draw.algorithm,
+                snapshotTicketCount: draw.snapshotTicketCount,
+                result: draw.result,
+                winners: [],
+                note: drawError || 'No winners found',
+              },
+            },
+            drawError 
+              ? `Draw completed with error: ${drawError}` 
+              : 'Draw completed successfully (no winners found)'
+          )
+        );
+        return;
+      }
 
       // Create winners (primary + reserves)
       const winners = [];
@@ -1087,24 +1166,33 @@ export const runAutomaticDraw = async (
     logger.info(
       `Running draw for competition ${competitionId} with 4 winners (1 primary + 3 reserves)`
     );
-    const drawResult = await drawService.runDraw({
-      competitionId,
-      numWinners: 4,
-    });
+    
+    let results: IDrawResult[] = [];
+    let snapshot: any[] = [];
+    let seed: string = drawService.generateSeed();
+    let drawError: string | undefined;
 
-    const { results, snapshot, seed } = drawResult;
-    logger.info(
-      `Draw completed: found ${results.length} winner(s) for competition ${competitionId}`
-    );
-
-    if (results.length === 0) {
-      logger.warn(
-        `No winners found for competition ${competitionId} - no tickets available or draw failed`
+    try {
+      const drawResult = await drawService.runDraw({
+        competitionId,
+        numWinners: 4,
+      });
+      results = drawResult.results;
+      snapshot = drawResult.snapshot;
+      seed = drawResult.seed;
+      logger.info(
+        `Draw completed: found ${results.length} winner(s) for competition ${competitionId}`
       );
-      return;
+    } catch (error: any) {
+      // If draw fails (e.g., no tickets), still create draw record for audit
+      logger.warn(`Automatic draw execution failed for competition ${competitionId}: ${error.message}. Creating draw record with empty results.`);
+      drawError = error.message;
+      // Create empty snapshot for audit
+      snapshot = [];
     }
 
-    // Create draw record
+    // Create draw record (always create, even if draw failed or no winners found for audit purposes)
+    const notes = drawError ? `[Draw Error: ${drawError}]` : undefined;
     const draw = await drawService.createDrawRecord(
       competitionId,
       seed,
@@ -1112,11 +1200,49 @@ export const runAutomaticDraw = async (
       snapshot,
       DrawMethod.AUTOMATIC,
       undefined, // No admin user for automatic
-      undefined, // No notes
+      notes,
       undefined, // No evidence URL
       undefined, // No live URL for automatic
       undefined // No URL type for automatic
     );
+
+    if (results.length === 0) {
+      logger.warn(
+        `No winners found for competition ${competitionId} - no tickets available or draw failed. Draw record created for audit purposes.`
+      );
+      
+      // Update competition status even if no winners
+      competition.status = CompetitionStatus.DRAWN;
+      competition.drawnAt = new Date();
+      if (isRealSession) {
+        await competition.save({ session });
+      } else {
+        await competition.save();
+      }
+
+      // Create event log
+      const drawEventOptions = isRealSession ? { session } : {};
+      await Event.create(
+        [
+          {
+            type: EventType.DRAW_CREATED,
+            entity: 'draw',
+            entityId: draw._id,
+            competitionId,
+            payload: {
+              drawMethod: DrawMethod.AUTOMATIC,
+              seed,
+              algorithm: 'hmac-sha256-v1',
+              note: 'No winners found - no tickets available',
+            },
+          },
+        ],
+        drawEventOptions
+      );
+
+      logger.info(`Automatic draw completed for competition ${competitionId} (no winners found)`);
+      return;
+    }
 
     // Create winners
     const winners = [];
