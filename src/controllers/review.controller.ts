@@ -96,9 +96,13 @@ export const getAllReviewsForAdmin = async (
       filters.verified = req.query.verified === 'true';
     }
 
-    // Filter by active status
+    // Filter by active status - by default, only show active reviews
+    // If explicitly requested, show all or only inactive
     if (req.query.isActive !== undefined) {
       filters.isActive = req.query.isActive === 'true';
+    } else {
+      // Default: only show active reviews (exclude soft-deleted ones)
+      filters.isActive = true;
     }
 
     // Search by title, body, or reviewer name
