@@ -18,7 +18,7 @@ import {
   getAllDrawsForAdmin,
   deleteDraw,
 } from '../controllers/draw.controller';
-import { getCompetitionTickets } from '../controllers/ticket.controller';
+import { getCompetitionTickets, deleteTicket } from '../controllers/ticket.controller';
 import {
   createChampion,
   deleteChampion,
@@ -165,6 +165,7 @@ router.get('/draws', getAllDrawsForAdmin);
 router.post('/competitions/:id/run-draw', runDraw);
 router.post('/competitions/:id/add-winner', addManualWinner);
 router.get('/competitions/:id/tickets', getCompetitionTickets);
+router.delete('/tickets/:id', deleteTicket);
 router.get('/draws/:id', getDraw);
 router.put('/draws/:id', validate(updateDrawSchema), updateDraw);
 router.delete('/draws/:id', deleteDraw);

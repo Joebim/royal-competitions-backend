@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
-import { Competition, Ticket, TicketStatus, Event, EventType, Entry } from '../models';
+import { Competition, Ticket, TicketStatus, Event, EventType, Entry, Winner, Draw } from '../models';
 import { CompetitionStatus } from '../models/Competition.model';
 import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
@@ -794,6 +794,106 @@ export const getCompetitionTicketList = async (
     );
   } catch (error: any) {
     logger.error('Error getting competition ticket list:', error);
+    next(error);
+  }
+};
+
+/**
+ * Delete a ticket (admin only)
+ * DELETE /api/v1/admin/tickets/:id
+ */
+export const deleteTicket = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const ticketId = req.params.id;
+
+    // Find the ticket
+    const ticket = await Ticket.findById(ticketId);
+    if (!ticket) {
+      throw new ApiError('Ticket not found', 404);
+    }
+
+    // Prevent deletion if ticket is a winner
+    if (ticket.status === TicketStatus.WINNER) {
+      throw new ApiError(
+        'Cannot delete a winning ticket. Please handle the winner record first.',
+        400
+      );
+    }
+
+    // Check if ticket is associated with a Winner record
+    const winner = await Winner.findOne({ ticketId: ticket._id });
+    if (winner) {
+      throw new ApiError(
+        'Cannot delete ticket that is associated with a winner record. Please delete the winner record first.',
+        400
+      );
+    }
+
+    // Check if ticket is associated with a Draw
+    const draw = await Draw.findOne({
+      'result.ticketId': ticket._id,
+    });
+    if (draw) {
+      throw new ApiError(
+        'Cannot delete ticket that is part of a draw result. Draw results cannot be modified.',
+        400
+      );
+    }
+
+    // Store ticket info for logging before deletion
+    const ticketInfo = {
+      id: ticket._id,
+      ticketNumber: ticket.ticketNumber,
+      competitionId: ticket.competitionId,
+      userId: ticket.userId,
+      orderId: ticket.orderId,
+      status: ticket.status,
+    };
+
+    // Delete the ticket
+    await Ticket.findByIdAndDelete(ticketId);
+
+    // Log the deletion event (non-critical)
+    try {
+      await Event.create({
+        type: EventType.TICKET_DELETED,
+        entity: 'ticket',
+        entityId: ticket._id as any,
+        userId: req.user?._id as any,
+        competitionId: ticket.competitionId as any,
+        payload: {
+          ticketId: ticketInfo.id,
+          ticketNumber: ticketInfo.ticketNumber,
+          previousStatus: ticketInfo.status,
+          deletedBy: req.user?._id,
+        },
+      });
+    } catch (eventError) {
+      logger.warn('Failed to create event log for ticket deletion:', eventError);
+    }
+
+    logger.info(
+      `Admin ${req.user?._id} deleted ticket ${ticketInfo.ticketNumber} (ID: ${ticketInfo.id}) from competition ${ticketInfo.competitionId}`
+    );
+
+    res.json(
+      ApiResponse.success(
+        {
+          ticket: {
+            id: ticketInfo.id,
+            ticketNumber: ticketInfo.ticketNumber,
+            status: ticketInfo.status,
+          },
+        },
+        'Ticket deleted successfully'
+      )
+    );
+  } catch (error: any) {
+    logger.error('Error deleting ticket:', error);
     next(error);
   }
 };

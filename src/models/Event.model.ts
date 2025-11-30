@@ -4,6 +4,7 @@ export enum EventType {
   TICKET_RESERVED = 'ticket_reserved',
   TICKET_ISSUED = 'ticket_issued',
   TICKET_CANCELLED = 'ticket_cancelled',
+  TICKET_DELETED = 'ticket_deleted',
   ORDER_CREATED = 'order_created',
   ORDER_PAID = 'order_paid',
   ORDER_FAILED = 'order_failed',
