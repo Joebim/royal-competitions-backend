@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { Winner, Competition, Draw } from '../models';
+import { Winner, Competition, Draw, Ticket, TicketStatus } from '../models';
 import { ApiError } from '../utils/apiError';
 import { ApiResponse } from '../utils/apiResponse';
 import { getPagination } from '../utils/pagination';
@@ -548,6 +548,7 @@ export const claimPrize = async (
 /**
  * Delete winner (admin only)
  * DELETE /api/v1/admin/winners/:id
+ * Also updates the associated ticket status from WINNER to ACTIVE
  */
 export const deleteWinnerForAdmin = async (
   req: Request,
@@ -562,9 +563,23 @@ export const deleteWinnerForAdmin = async (
       throw new ApiError('Winner not found', 404);
     }
 
+    // Update ticket status from WINNER to ACTIVE before deleting winner
+    await Ticket.findByIdAndUpdate(winner.ticketId, {
+      status: TicketStatus.ACTIVE,
+    });
+
+    // Delete the winner
     await Winner.findByIdAndDelete(winnerId);
 
-    res.json(ApiResponse.success(null, 'Winner deleted successfully'));
+    res.json(
+      ApiResponse.success(
+        {
+          message:
+            'Winner deleted successfully. Associated ticket status has been updated to ACTIVE.',
+        },
+        'Winner deleted successfully'
+      )
+    );
   } catch (error) {
     next(error);
   }

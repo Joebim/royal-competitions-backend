@@ -816,10 +816,11 @@ export const deleteTicket = async (
       throw new ApiError('Ticket not found', 404);
     }
 
-    // Prevent deletion if ticket is a winner
-    if (ticket.status === TicketStatus.WINNER) {
+    // Prevent deletion if ticket is a winner (unless force delete)
+    const forceDelete = req.query.force === 'true' || req.body.force === true;
+    if (ticket.status === TicketStatus.WINNER && !forceDelete) {
       throw new ApiError(
-        'Cannot delete a winning ticket. Please handle the winner record first.',
+        'Cannot delete a winning ticket. Please handle the winner record first, or use ?force=true to delete both.',
         400
       );
     }
@@ -827,21 +828,49 @@ export const deleteTicket = async (
     // Check if ticket is associated with a Winner record
     const winner = await Winner.findOne({ ticketId: ticket._id });
     if (winner) {
-      throw new ApiError(
-        'Cannot delete ticket that is associated with a winner record. Please delete the winner record first.',
-        400
+      // Check if force delete is requested (cascade delete)
+      const forceDelete = req.query.force === 'true' || req.body.force === true;
+      
+      if (!forceDelete) {
+        throw new ApiError(
+          'Cannot delete ticket that is associated with a winner record. Please delete the winner record first, or use ?force=true to delete both.',
+          400
+        );
+      }
+
+      // Cascade delete: delete the winner first
+      await Winner.findByIdAndDelete(winner._id);
+      logger.info(
+        `Cascade deleted winner ${winner._id} when deleting ticket ${ticketId}`
       );
     }
 
     // Check if ticket is associated with a Draw
-    const draw = await Draw.findOne({
+    const draws = await Draw.find({
       'result.ticketId': ticket._id,
     });
-    if (draw) {
-      throw new ApiError(
-        'Cannot delete ticket that is part of a draw result. Draw results cannot be modified.',
-        400
-      );
+    if (draws.length > 0) {
+      // Check if force delete is requested
+      const forceDelete = req.query.force === 'true' || req.body.force === true;
+      
+      if (!forceDelete) {
+        throw new ApiError(
+          'Cannot delete ticket that is part of a draw result. Draw results cannot be modified. Use ?force=true to remove the ticket from draw results and delete it.',
+          400
+        );
+      }
+
+      // Remove ticket from all draw results
+      const ticketIdObj = ticket._id as mongoose.Types.ObjectId;
+      for (const draw of draws) {
+        draw.result = draw.result.filter(
+          (result) => result.ticketId.toString() !== ticketIdObj.toString()
+        );
+        await draw.save();
+        logger.info(
+          `Removed ticket ${ticketId} from draw ${draw._id} result array`
+        );
+      }
     }
 
     // Store ticket info for logging before deletion
