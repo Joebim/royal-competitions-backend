@@ -189,6 +189,7 @@ export const runDraw = async (
           drawEventOptions
         );
 
+        
         res.json(
           ApiResponse.success(
             {
