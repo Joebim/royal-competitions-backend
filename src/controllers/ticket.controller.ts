@@ -551,14 +551,21 @@ export const getCompetitionTickets = async (
     const competitionId = req.params.id;
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 50;
-    const status = req.query.status as string | undefined;
+    const statusParam = req.query.status as string | undefined;
 
     const query: any = {
       competitionId,
     };
 
-    if (status) {
-      query.status = status;
+    if (statusParam) {
+      // Normalize status to lowercase to match enum values (e.g., "Reserved" -> "reserved")
+      const normalizedStatus = statusParam.toLowerCase();
+      // Validate against enum values
+      if (Object.values(TicketStatus).includes(normalizedStatus as TicketStatus)) {
+        query.status = normalizedStatus;
+      } else {
+        throw new ApiError(`Invalid status: ${statusParam}. Valid values are: ${Object.values(TicketStatus).join(', ')}`, 400);
+      }
     }
 
     const { skip, limit: pageLimit } = getPagination(page, limit);
@@ -574,10 +581,29 @@ export const getCompetitionTickets = async (
       Ticket.countDocuments(query),
     ]);
 
+    // Ensure isValid and reservedUntil fields are included in response
+    const ticketsWithFields = tickets.map((ticket: any) => {
+      const formattedTicket: any = {
+        ...ticket,
+        isValid: ticket.isValid !== undefined ? ticket.isValid : true, // Default to true if not set
+        status: ticket.status || 'reserved', // Ensure status is always present
+      };
+      
+      // Include reservedUntil if present (convert to ISO string if Date object)
+      // This is primarily for reserved tickets, but included for any ticket that has it
+      if (ticket.reservedUntil) {
+        formattedTicket.reservedUntil = ticket.reservedUntil instanceof Date 
+          ? ticket.reservedUntil.toISOString() 
+          : ticket.reservedUntil;
+      }
+      
+      return formattedTicket;
+    });
+
     res.json(
       ApiResponse.success(
         {
-          tickets,
+          tickets: ticketsWithFields,
           pagination: {
             page,
             limit: pageLimit,
