@@ -6,7 +6,7 @@ export interface INewsletter extends Document {
   lastName?: string;
   mailchimpSubscriberId?: string;
   status: 'subscribed' | 'unsubscribed' | 'pending';
-  source: 'website' | 'checkout' | 'admin';
+  source: 'website' | 'checkout' | 'admin' | 'footer';
   subscribedAt: Date;
   unsubscribedAt?: Date;
   createdAt: Date;
@@ -33,7 +33,7 @@ const newsletterSchema = new Schema<INewsletter>(
     },
     source: {
       type: String,
-      enum: ['website', 'checkout', 'admin'],
+      enum: ['website', 'checkout', 'admin', 'footer'],
       default: 'website',
     },
     subscribedAt: Date,
