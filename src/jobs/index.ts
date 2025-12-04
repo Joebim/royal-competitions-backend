@@ -10,6 +10,7 @@ import klaviyoService from '../services/klaviyo.service';
  * Clean up expired reservations
  * Runs every 2 minutes for more aggressive cleanup
  * Also handles reservations that are past their expiration time
+ * NOTE: Does NOT delete reserved tickets that belong to orders (those have 24-hour expiry)
  */
 const cleanupExpiredReservations = async () => {
   try {
@@ -17,33 +18,97 @@ const cleanupExpiredReservations = async () => {
     const nowTimestamp = Date.now(); // UTC milliseconds since epoch
     const now = new Date(nowTimestamp); // Create Date from UTC milliseconds
 
-    // Delete expired reservations
-    const result = await Ticket.deleteMany({
+    // Find expired reserved tickets that are NOT associated with orders
+    // These are cart-only reservations (15 minutes expiry)
+    // CRITICAL: Only delete tickets WITHOUT orderId - tickets with orderId have 24-hour expiry
+    const expiredCartReservations = await Ticket.find({
       status: TicketStatus.RESERVED,
+      orderId: { $exists: false }, // No orderId = cart reservation only - THIS IS THE KEY FILTER
       $or: [
         { reservedUntil: { $lt: now } },
         { reservedUntil: { $exists: false } }, // Handle tickets without reservedUntil
       ],
     });
 
-    if (result.deletedCount > 0) {
-      logger.info(`Cleaned up ${result.deletedCount} expired reservations`);
-    }
-
-    // Also clean up any reservations older than 20 minutes (safety net)
+    // Also clean up any cart reservations older than 20 minutes (safety net)
     const twentyMinutesAgo = new Date(now.getTime() - 20 * 60 * 1000);
-    const oldReservations = await Ticket.deleteMany({
+    const oldCartReservations = await Ticket.find({
       status: TicketStatus.RESERVED,
+      orderId: { $exists: false }, // No orderId = cart reservation only
       createdAt: { $lt: twentyMinutesAgo },
     });
 
-    if (oldReservations.deletedCount > 0) {
-      logger.info(
-        `Cleaned up ${oldReservations.deletedCount} old reservations (safety net)`
-      );
+    // Combine and get unique ticket IDs
+    const ticketsToDelete = new Set([
+      ...expiredCartReservations.map((t: any) => t._id.toString()),
+      ...oldCartReservations.map((t: any) => t._id.toString()),
+    ]);
+
+    if (ticketsToDelete.size > 0) {
+      const result = await Ticket.deleteMany({
+        _id: { $in: Array.from(ticketsToDelete).map((id) => id) },
+      });
+
+      if (result.deletedCount > 0) {
+        logger.info(`Cleaned up ${result.deletedCount} expired cart reservations`);
+      }
     }
   } catch (error: any) {
     logger.error('Error cleaning up expired reservations:', error);
+  }
+};
+
+/**
+ * Mark orders as failed when their reserved tickets expire (24 hours)
+ * Runs every 5 minutes
+ */
+const markOrdersFailedOnTicketExpiry = async () => {
+  try {
+    const now = new Date();
+    
+    // Find orders that are PENDING and have reserved tickets that have expired
+    const expiredOrders = await Order.find({
+      status: OrderStatus.PENDING,
+      paymentStatus: OrderPaymentStatus.PENDING,
+      ticketsReserved: { $exists: true, $ne: [] },
+    });
+
+    let failedCount = 0;
+
+    for (const order of expiredOrders) {
+      // Check if any of the order's reserved tickets have expired
+      const expiredTickets = await Ticket.find({
+        competitionId: order.competitionId,
+        ticketNumber: { $in: order.ticketsReserved },
+        status: TicketStatus.RESERVED,
+        reservedUntil: { $lt: now },
+      });
+
+      // If all reserved tickets have expired, mark order as failed
+      if (expiredTickets.length === order.ticketsReserved.length) {
+        order.status = OrderStatus.FAILED;
+        order.paymentStatus = OrderPaymentStatus.FAILED;
+        await order.save();
+        
+        // Delete the expired reserved tickets
+        await Ticket.deleteMany({
+          competitionId: order.competitionId,
+          ticketNumber: { $in: order.ticketsReserved },
+          status: TicketStatus.RESERVED,
+        });
+
+        failedCount++;
+        logger.info(
+          `Marked order ${order.orderNumber} as FAILED - reserved tickets expired after 24 hours`
+        );
+      }
+    }
+
+    if (failedCount > 0) {
+      logger.info(`Marked ${failedCount} order(s) as FAILED due to expired ticket reservations`);
+    }
+  } catch (error: any) {
+    logger.error('Error marking orders as failed on ticket expiry:', error);
   }
 };
 
@@ -338,6 +403,12 @@ export const startScheduledJobs = () => {
   cron.schedule('*/5 * * * *', () => {
     logger.info('Running competition end date check job');
     endCompetitionsPastEndDate();
+  });
+
+  // Mark orders as failed when reserved tickets expire (24 hours)
+  cron.schedule('*/5 * * * *', () => {
+    logger.info('Running order expiry check job');
+    markOrdersFailedOnTicketExpiry();
   });
 
   // Detect and track abandoned checkouts every 5 minutes

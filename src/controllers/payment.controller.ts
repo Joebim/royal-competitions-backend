@@ -33,31 +33,79 @@ export const createSquarePayment = async (
   res: Response,
   next: NextFunction
 ): Promise<void> => {
+  const startTime = Date.now();
   try {
+    logger.info('💳 [PAYMENT] ===== CREATE SQUARE PAYMENT =====', {
+      userId: req.user?._id,
+      timestamp: new Date().toISOString(),
+    });
+
     if (!req.user) {
+      logger.warn('💳 [PAYMENT] Unauthorized - no user');
       throw new ApiError('Not authorized', 401);
     }
 
     const { sourceId, amount, orderId, idempotencyKey } = req.body;
 
+    logger.info('💳 [PAYMENT] Payment request received', {
+      userId: req.user._id,
+      orderId,
+      amount,
+      hasSourceId: !!sourceId,
+      sourceIdPrefix: sourceId?.substring(0, 20),
+      idempotencyKey,
+    });
+
     if (!sourceId) {
+      logger.warn('💳 [PAYMENT] Missing sourceId', {
+        userId: req.user._id,
+      });
       throw new ApiError('sourceId (payment nonce) is required', 400);
     }
 
     if (!amount && !orderId) {
+      logger.warn('💳 [PAYMENT] Missing amount and orderId', {
+        userId: req.user._id,
+      });
       throw new ApiError('Amount or orderId is required', 400);
     }
 
     // If orderId is provided, verify it exists and user owns it
     let order = null;
     if (orderId) {
+      logger.info('💳 [PAYMENT] Fetching order', {
+        userId: req.user._id,
+        orderId,
+      });
+
       order = await Order.findById(orderId);
       if (!order) {
+        logger.error('💳 [PAYMENT] Order not found', {
+          userId: req.user._id,
+          orderId,
+        });
         throw new ApiError('Order not found', 404);
       }
 
+      logger.info('💳 [PAYMENT] Order found', {
+        userId: req.user._id,
+        orderId: order._id,
+        orderNumber: order.orderNumber,
+        orderUserId: order.userId,
+        orderStatus: order.status,
+        paymentStatus: order.paymentStatus,
+        amount: order.amount,
+        ticketsReserved: order.ticketsReserved,
+        ticketsReservedCount: order.ticketsReserved?.length || 0,
+      });
+
       // Check authorization - user must own the order
       if (order.userId && order.userId.toString() !== String(req.user._id)) {
+        logger.warn('💳 [PAYMENT] Authorization failed', {
+          userId: req.user._id,
+          orderId: order._id,
+          orderUserId: order.userId,
+        });
         throw new ApiError('Not authorized to access this order', 403);
       }
     }
@@ -67,6 +115,14 @@ export const createSquarePayment = async (
       ? order.amount ||
         ((order as any).amountPence ? (order as any).amountPence / 100 : 0)
       : amount;
+
+    logger.info('💳 [PAYMENT] Creating Square payment', {
+      userId: req.user._id,
+      orderId: order?._id,
+      amount: orderAmount,
+      currency: order?.currency || 'GBP',
+      competitionId: order ? String(order.competitionId) : undefined,
+    });
 
     // Create Square payment
     const squarePayment = await squareService.createPayment({
@@ -81,18 +137,45 @@ export const createSquarePayment = async (
       idempotencyKey: idempotencyKey || uuidv4(),
     });
 
+    logger.info('💳 [PAYMENT] Square payment created', {
+      userId: req.user._id,
+      orderId: order?._id,
+      paymentId: squarePayment.id,
+      paymentStatus: squarePayment.status,
+      amount: squarePayment.amountMoney?.amount,
+    });
+
     // Update order with Square payment ID if order exists
     if (order) {
+      logger.info('💳 [PAYMENT] Updating order with payment ID', {
+        userId: req.user._id,
+        orderId: order._id,
+        paymentId: squarePayment.id,
+      });
+
       order.squarePaymentId = squarePayment.id;
       await order.save();
 
+      logger.info('💳 [PAYMENT] Order updated', {
+        userId: req.user._id,
+        orderId: order._id,
+        squarePaymentId: order.squarePaymentId,
+      });
+
       // Create payment record
-      await Payment.create({
+      const paymentRecord = await Payment.create({
         orderId: order._id,
         userId: order.userId || req.user._id,
         amount: orderAmount,
         paymentIntentId: squarePayment.id,
         status: PaymentStatus.PENDING,
+      });
+
+      logger.info('💳 [PAYMENT] Payment record created', {
+        userId: req.user._id,
+        orderId: order._id,
+        paymentRecordId: paymentRecord._id,
+        paymentId: squarePayment.id,
       });
 
       // Track "Started Checkout" event in Klaviyo
@@ -125,22 +208,18 @@ export const createSquarePayment = async (
       }
     }
 
-    // Check payment status
-    if (squarePayment.status === 'COMPLETED') {
-      // Payment completed immediately - handle success
-      if (order) {
-        await handlePaymentSuccess(
-          {
-            id: squarePayment.id,
-            status: squarePayment.status,
-            amount_money: squarePayment.amountMoney,
-          },
-          req.user._id
-        );
-      }
-    }
+    // Return payment details immediately to prevent timeout
+    // Heavy operations (Klaviyo, emails) will be handled asynchronously
+    const duration = Date.now() - startTime;
+    logger.info('💳 [PAYMENT] ===== CREATE SQUARE PAYMENT COMPLETED =====', {
+      userId: req.user._id,
+      orderId: order?._id,
+      paymentId: squarePayment.id,
+      paymentStatus: squarePayment.status,
+      duration: `${duration}ms`,
+    });
 
-    // Return payment details for frontend
+    // Send response immediately to prevent timeout
     res.json(
       ApiResponse.success(
         {
@@ -151,8 +230,55 @@ export const createSquarePayment = async (
         'Square payment created'
       )
     );
+
+    // Process payment success asynchronously (non-blocking)
+    // This prevents timeout issues while still processing tickets and sending emails
+    if (squarePayment.status === 'COMPLETED' && order && req.user) {
+      const userId = req.user._id; // Capture userId before async callback
+      logger.info('💳 [PAYMENT] Payment completed, processing success asynchronously', {
+        userId: userId,
+        orderId: order._id,
+        paymentId: squarePayment.id,
+      });
+
+      // Use setImmediate to process after response is sent
+      setImmediate(async () => {
+        try {
+          await handlePaymentSuccess(
+            {
+              id: squarePayment.id,
+              status: squarePayment.status,
+              amount_money: squarePayment.amountMoney,
+            },
+            userId
+          );
+        } catch (error: any) {
+          logger.error('💳 [PAYMENT] Error in async payment success handling', {
+            userId: userId,
+            orderId: order._id,
+            paymentId: squarePayment.id,
+            error: error.message,
+          });
+          // Don't throw - payment is already successful, just log the error
+        }
+      });
+    } else {
+      logger.info('💳 [PAYMENT] Payment not completed yet', {
+        userId: req.user?._id,
+        orderId: order?._id,
+        paymentId: squarePayment.id,
+        paymentStatus: squarePayment.status,
+      });
+    }
     return;
-  } catch (error) {
+  } catch (error: any) {
+    const duration = Date.now() - startTime;
+    logger.error('💳 [PAYMENT] ===== CREATE SQUARE PAYMENT ERROR =====', {
+      userId: req.user?._id,
+      error: error.message,
+      stack: error.stack,
+      duration: `${duration}ms`,
+    });
     next(error);
   }
 };
@@ -170,45 +296,110 @@ export const confirmPayment = async (
   res: Response,
   next: NextFunction
 ): Promise<void> => {
+  const startTime = Date.now();
   try {
+    logger.info('✅ [PAYMENT] ===== CONFIRM PAYMENT =====', {
+      userId: req.user?._id,
+      timestamp: new Date().toISOString(),
+    });
+
     if (!req.user) {
+      logger.warn('✅ [PAYMENT] Unauthorized - no user');
       throw new ApiError('Not authorized', 401);
     }
 
     const { paymentId, orderId } = req.body;
 
+    logger.info('✅ [PAYMENT] Confirm payment request received', {
+      userId: req.user._id,
+      paymentId,
+      orderId,
+    });
+
     if (!paymentId && !orderId) {
+      logger.warn('✅ [PAYMENT] Missing paymentId and orderId', {
+        userId: req.user._id,
+      });
       throw new ApiError('Payment ID or Order ID is required', 400);
     }
 
     // Find order by Square payment ID or internal order ID
     let order = null;
     if (orderId) {
+      logger.info('✅ [PAYMENT] Finding order by orderId', {
+        userId: req.user._id,
+        orderId,
+      });
+
       order = await Order.findById(orderId);
       if (!order) {
+        logger.error('✅ [PAYMENT] Order not found', {
+          userId: req.user._id,
+          orderId,
+        });
         throw new ApiError('Order not found', 404);
       }
+
+      logger.info('✅ [PAYMENT] Order found by orderId', {
+        userId: req.user._id,
+        orderId: order._id,
+        orderNumber: order.orderNumber,
+        orderStatus: order.status,
+        paymentStatus: order.paymentStatus,
+        squarePaymentId: order.squarePaymentId,
+      });
       
       // Check authorization - user must own the order
       if (order.userId && order.userId.toString() !== String(req.user._id)) {
+        logger.warn('✅ [PAYMENT] Authorization failed', {
+          userId: req.user._id,
+          orderId: order._id,
+          orderUserId: order.userId,
+        });
         throw new ApiError('Not authorized to access this order', 403);
       }
     } else if (paymentId) {
+      logger.info('✅ [PAYMENT] Finding order by paymentId', {
+        userId: req.user._id,
+        paymentId,
+      });
+
       order = await Order.findOne({ squarePaymentId: paymentId });
       if (!order) {
-        logger.warn(`Order not found for Square payment ${paymentId}`);
+        logger.warn('✅ [PAYMENT] Order not found for Square payment', {
+          userId: req.user._id,
+          paymentId,
+        });
         throw new ApiError('Order not found for this payment', 404);
       }
+
+      logger.info('✅ [PAYMENT] Order found by paymentId', {
+        userId: req.user._id,
+        orderId: order._id,
+        orderNumber: order.orderNumber,
+        orderStatus: order.status,
+        paymentStatus: order.paymentStatus,
+        squarePaymentId: order.squarePaymentId,
+      });
       
       // Check authorization for payment ID lookup - user must own the order
       if (order.userId && order.userId.toString() !== String(req.user._id)) {
+        logger.warn('✅ [PAYMENT] Authorization failed', {
+          userId: req.user._id,
+          orderId: order._id,
+          orderUserId: order.userId,
+        });
         throw new ApiError('Not authorized to access this order', 403);
       }
     }
 
     // Check if order is already paid
     if (order && order.paymentStatus === OrderPaymentStatus.PAID) {
-      logger.info(`Order ${order._id} already paid, returning success`);
+      logger.info('✅ [PAYMENT] Order already paid', {
+        userId: req.user._id,
+        orderId: order._id,
+        paymentStatus: order.paymentStatus,
+      });
       res.json(
         ApiResponse.success(
           {
@@ -224,15 +415,40 @@ export const confirmPayment = async (
 
     // Get payment details from Square
     if (!order) {
+      logger.error('✅ [PAYMENT] Order not found after lookup', {
+        userId: req.user._id,
+        paymentId,
+        orderId,
+      });
       throw new ApiError('Order not found', 404);
     }
     
+    logger.info('✅ [PAYMENT] Fetching payment from Square', {
+      userId: req.user._id,
+      orderId: order._id,
+      paymentId: paymentId || order.squarePaymentId,
+    });
+
     const squarePayment = await squareService.getPayment(
       paymentId || order.squarePaymentId || ''
     );
 
+    logger.info('✅ [PAYMENT] Square payment retrieved', {
+      userId: req.user._id,
+      orderId: order._id,
+      paymentId: squarePayment.id,
+      paymentStatus: squarePayment.status,
+      amount: squarePayment.amountMoney?.amount,
+    });
+
     // Check if payment was successful
     if (squarePayment.status === 'COMPLETED') {
+      logger.info('✅ [PAYMENT] Payment completed, handling success', {
+        userId: req.user._id,
+        orderId: order._id,
+        paymentId: squarePayment.id,
+      });
+
       if (order && squarePayment.status === 'COMPLETED') {
         await handlePaymentSuccess(
           {
@@ -243,6 +459,15 @@ export const confirmPayment = async (
           req.user._id
         );
       }
+
+      const duration = Date.now() - startTime;
+      logger.info('✅ [PAYMENT] ===== CONFIRM PAYMENT COMPLETED =====', {
+        userId: req.user._id,
+        orderId: order._id,
+        paymentId: squarePayment.id,
+        paymentStatus: squarePayment.status,
+        duration: `${duration}ms`,
+      });
 
       res.json(
         ApiResponse.success(
@@ -257,13 +482,25 @@ export const confirmPayment = async (
       );
       return;
     } else {
+      logger.error('✅ [PAYMENT] Payment failed', {
+        userId: req.user._id,
+        orderId: order._id,
+        paymentId: squarePayment.id,
+        paymentStatus: squarePayment.status,
+      });
       throw new ApiError(
         `Payment failed with status: ${squarePayment.status}`,
         400
       );
     }
   } catch (error: any) {
-    logger.error('Confirm payment error:', error);
+    const duration = Date.now() - startTime;
+    logger.error('✅ [PAYMENT] ===== CONFIRM PAYMENT ERROR =====', {
+      userId: req.user?._id,
+      error: error.message,
+      stack: error.stack,
+      duration: `${duration}ms`,
+    });
     next(error);
   }
 };
@@ -352,16 +589,44 @@ export async function handlePaymentSuccess(
   payment: any,
   authenticatedUserId?: any
 ) {
+  const startTime = Date.now();
   try {
+    logger.info('🎉 [PAYMENT] ===== HANDLE PAYMENT SUCCESS =====', {
+      paymentId: payment.id,
+      paymentStatus: payment.status,
+      authenticatedUserId,
+      timestamp: new Date().toISOString(),
+    });
+
     // Find order by Square payment ID
     const squarePaymentId = payment.id;
+
+    logger.info('🎉 [PAYMENT] Finding order by Square payment ID', {
+      paymentId: squarePaymentId,
+      authenticatedUserId,
+    });
 
     const order = await Order.findOne({ squarePaymentId });
 
     if (!order) {
-      logger.error(`Order not found for Square payment ${squarePaymentId}`);
+      logger.error('🎉 [PAYMENT] Order not found for Square payment', {
+        paymentId: squarePaymentId,
+        authenticatedUserId,
+      });
       return;
     }
+
+    logger.info('🎉 [PAYMENT] Order found', {
+      orderId: order._id,
+      orderNumber: order.orderNumber,
+      orderStatus: order.status,
+      paymentStatus: order.paymentStatus,
+      orderUserId: order.userId,
+      competitionId: order.competitionId,
+      ticketsReserved: order.ticketsReserved,
+      ticketsReservedCount: order.ticketsReserved?.length || 0,
+      ticketsValid: order.ticketsValid,
+    });
 
     // If order doesn't have userId but authenticatedUserId is provided, update order
     if (!order.userId && authenticatedUserId) {
@@ -389,9 +654,43 @@ export async function handlePaymentSuccess(
     const isValid = order.ticketsValid !== false; // Default to true
 
     // Update reserved tickets to active
-    // First, try to find tickets by RESERVED status
-    const updateResult = await Ticket.updateMany(
+    // First, try to find tickets by orderId (preferred - tickets should be associated with order)
+    // If not found, fall back to finding by ticketNumber + competitionId
+    logger.info('🎉 [PAYMENT] Updating tickets to ACTIVE (method 1: by orderId)', {
+      orderId: order._id,
+      competitionId: order.competitionId,
+      ticketNumbers: order.ticketsReserved,
+      isValid,
+      orderCreatedAt: order.createdAt,
+      orderStatus: order.status,
+      paymentStatus: order.paymentStatus,
+    });
+
+    // First, check what tickets exist before updating
+    const ticketsBeforePayment = await Ticket.find({
+      competitionId: order.competitionId,
+      ticketNumber: { $in: order.ticketsReserved },
+    }).lean();
+
+    logger.info('🎉 [PAYMENT] Tickets found before payment processing', {
+      orderId: order._id,
+      expectedCount: order.quantity,
+      foundCount: ticketsBeforePayment.length,
+      ticketNumbers: order.ticketsReserved,
+      foundTickets: ticketsBeforePayment.map((t: any) => ({
+        ticketNumber: t.ticketNumber,
+        status: t.status,
+        orderId: t.orderId,
+        userId: t.userId,
+        reservedUntil: t.reservedUntil,
+        isValid: t.isValid,
+        isExpired: t.reservedUntil ? new Date(t.reservedUntil) <= new Date() : true,
+      })),
+    });
+
+    let updateResult = await Ticket.updateMany(
       {
+        orderId: order._id,
         competitionId: order.competitionId,
         ticketNumber: { $in: order.ticketsReserved },
         status: TicketStatus.RESERVED,
@@ -399,7 +698,6 @@ export async function handlePaymentSuccess(
       {
         $set: {
           status: TicketStatus.ACTIVE,
-          orderId: order._id,
           userId: order.userId || null, // Set userId even if null (for guest orders)
           isValid: isValid, // Set isValid based on answer correctness
         },
@@ -409,21 +707,199 @@ export async function handlePaymentSuccess(
       }
     );
 
-    // Tickets should already exist from cart - if not found, it's an error
+    logger.info('🎉 [PAYMENT] Ticket update result (method 1)', {
+      orderId: order._id,
+      matchedCount: updateResult.matchedCount,
+      modifiedCount: updateResult.modifiedCount,
+      expectedCount: order.quantity,
+    });
+
+    // If not found by orderId, try without orderId (for backward compatibility or edge cases)
     if (updateResult.matchedCount === 0) {
+      logger.warn('🎉 [PAYMENT] No tickets found by orderId, trying method 2 (by ticketNumber + competitionId)', {
+        orderId: order._id,
+        competitionId: order.competitionId,
+        ticketNumbers: order.ticketsReserved,
+        reason: 'Tickets may not have orderId set during order creation',
+      });
+
+      // Check tickets again without orderId filter
+      const ticketsWithoutOrderId = await Ticket.find({
+        competitionId: order.competitionId,
+        ticketNumber: { $in: order.ticketsReserved },
+        status: TicketStatus.RESERVED,
+      }).lean();
+
+      logger.info('🎉 [PAYMENT] Tickets found without orderId filter', {
+        orderId: order._id,
+        foundCount: ticketsWithoutOrderId.length,
+        tickets: ticketsWithoutOrderId.map((t: any) => ({
+          ticketNumber: t.ticketNumber,
+          status: t.status,
+          orderId: t.orderId,
+          userId: t.userId,
+          reservedUntil: t.reservedUntil,
+        })),
+      });
+      
+      updateResult = await Ticket.updateMany(
+        {
+          competitionId: order.competitionId,
+          ticketNumber: { $in: order.ticketsReserved },
+          status: TicketStatus.RESERVED,
+        },
+        {
+          $set: {
+            status: TicketStatus.ACTIVE,
+            orderId: order._id, // Associate with order now
+            userId: order.userId || null,
+            isValid: isValid,
+          },
+          $unset: {
+            reservedUntil: 1,
+          },
+        }
+      );
+
+      logger.info('🎉 [PAYMENT] Ticket update result (method 2)', {
+        orderId: order._id,
+        matchedCount: updateResult.matchedCount,
+        modifiedCount: updateResult.modifiedCount,
+        expectedCount: order.quantity,
+      });
+    }
+
+    // If still not found, check if tickets exist but in wrong status
+    if (updateResult.matchedCount === 0) {
+      const existingTickets = await Ticket.find({
+        competitionId: order.competitionId,
+        ticketNumber: { $in: order.ticketsReserved },
+      }).lean();
+
       logger.error(
-        `No RESERVED tickets found for order ${order._id}. Tickets should have been created when adding to cart.`
+        `No RESERVED tickets found for order ${order._id}`,
+        {
+          orderId: order._id,
+          competitionId: order.competitionId,
+          ticketsReserved: order.ticketsReserved,
+          existingTickets: existingTickets.map((t: any) => ({
+            ticketNumber: t.ticketNumber,
+            status: t.status,
+            orderId: t.orderId,
+            userId: t.userId,
+            reservedUntil: t.reservedUntil,
+          })),
+        }
       );
-      throw new ApiError(
-        'Tickets not found. Please ensure items were added to cart before checkout.',
-        400
-      );
+
+      // CRITICAL FIX: If tickets don't exist, recreate them for the order
+      // This handles the case where tickets were deleted by cleanup job
+      logger.warn('🎉 [PAYMENT] Attempting to recreate missing tickets for order', {
+        orderId: order._id,
+        competitionId: order.competitionId,
+        ticketsReserved: order.ticketsReserved,
+      });
+
+      const now = new Date();
+      const reservedUntil24Hours = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+      
+      const ticketsToCreate = order.ticketsReserved.map((ticketNumber: number) => ({
+        competitionId: order.competitionId,
+        ticketNumber,
+        userId: order.userId || null,
+        status: TicketStatus.RESERVED,
+        reservedUntil: reservedUntil24Hours,
+        orderId: order._id,
+        isValid: isValid,
+      }));
+
+      try {
+        await Ticket.insertMany(ticketsToCreate, { ordered: false });
+        logger.info('🎉 [PAYMENT] Recreated missing tickets for order', {
+          orderId: order._id,
+          ticketsCreated: ticketsToCreate.length,
+        });
+
+        // Now update them to ACTIVE
+        const recreateUpdateResult = await Ticket.updateMany(
+          {
+            orderId: order._id,
+            competitionId: order.competitionId,
+            ticketNumber: { $in: order.ticketsReserved },
+            status: TicketStatus.RESERVED,
+          },
+          {
+            $set: {
+              status: TicketStatus.ACTIVE,
+              userId: order.userId || null,
+              isValid: isValid,
+            },
+            $unset: {
+              reservedUntil: 1,
+            },
+          }
+        );
+
+        logger.info('🎉 [PAYMENT] Updated recreated tickets to ACTIVE', {
+          orderId: order._id,
+          matchedCount: recreateUpdateResult.matchedCount,
+          modifiedCount: recreateUpdateResult.modifiedCount,
+        });
+
+        // Continue with the rest of the payment success flow
+        // Update the updateResult for logging purposes
+        updateResult = recreateUpdateResult;
+      } catch (insertError: any) {
+        if (insertError.code === 11000) {
+          // Tickets might have been created concurrently, try update again
+          logger.warn('🎉 [PAYMENT] Tickets created concurrently, retrying update');
+          const retryUpdateResult = await Ticket.updateMany(
+            {
+              orderId: order._id,
+              competitionId: order.competitionId,
+              ticketNumber: { $in: order.ticketsReserved },
+              status: TicketStatus.RESERVED,
+            },
+            {
+              $set: {
+                status: TicketStatus.ACTIVE,
+                userId: order.userId || null,
+                isValid: isValid,
+              },
+              $unset: {
+                reservedUntil: 1,
+              },
+            }
+          );
+
+          if (retryUpdateResult.matchedCount === 0) {
+            throw new ApiError(
+              'Tickets not found. Please ensure items were added to cart before checkout.',
+              400
+            );
+          }
+          updateResult = retryUpdateResult;
+        } else {
+          logger.error('🎉 [PAYMENT] Failed to recreate tickets', {
+            orderId: order._id,
+            error: insertError.message,
+          });
+          throw new ApiError(
+            'Tickets not found. Please ensure items were added to cart before checkout.',
+            400
+          );
+        }
+      }
     }
 
     // Log the update for debugging
-    logger.info(
-      `Updated ${updateResult.modifiedCount} tickets to ACTIVE for order ${order._id}, userId: ${order.userId || 'null'}`
-    );
+    logger.info('🎉 [PAYMENT] Tickets updated to ACTIVE', {
+      orderId: order._id,
+      matchedCount: updateResult.matchedCount,
+      modifiedCount: updateResult.modifiedCount,
+      ticketNumbers: order.ticketsReserved,
+      userId: order.userId || null,
+    });
 
     // Increment competition ticketsSold
     const updatedCompetition = await Competition.findByIdAndUpdate(
@@ -618,9 +1094,25 @@ export async function handlePaymentSuccess(
       }
     }
 
-    logger.info(`Payment succeeded and tickets issued for order ${order._id}`);
+    const duration = Date.now() - startTime;
+    logger.info('🎉 [PAYMENT] ===== HANDLE PAYMENT SUCCESS COMPLETED =====', {
+      orderId: order._id,
+      orderNumber: order.orderNumber,
+      paymentId: squarePaymentId,
+      ticketsUpdated: updateResult.modifiedCount,
+      orderStatus: order.status,
+      paymentStatus: order.paymentStatus,
+      duration: `${duration}ms`,
+    });
   } catch (error: any) {
-    logger.error('Handle payment success error:', error);
+    const duration = Date.now() - startTime;
+    logger.error('🎉 [PAYMENT] ===== HANDLE PAYMENT SUCCESS ERROR =====', {
+      paymentId: payment?.id,
+      error: error.message,
+      stack: error.stack,
+      duration: `${duration}ms`,
+    });
+    throw error;
   }
 }
 

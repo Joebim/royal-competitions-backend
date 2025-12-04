@@ -43,6 +43,7 @@ const formatCartResponse = async (cart: any) => {
           : [], // Array of issued ticket numbers (always included)
         unitPrice: item.unitPrice,
         subtotal: item.subtotal,
+        ticketsValid: item.ticketsValid !== undefined ? item.ticketsValid : true, // Default to true if not set
         addedAt: item.addedAt,
         updatedAt: item.updatedAt,
         competition: competition
@@ -145,7 +146,7 @@ export const addOrUpdateCartItem = async (
       throw new ApiError('Not authorized', 401);
     }
 
-    const { competitionId, quantity, ticketNumbers, ticketType } = req.body;
+    const { competitionId, quantity, ticketNumbers, ticketType, ticketsValid } = req.body;
     // ticketType: 'lucky_draw' | 'number_picker'
     // If ticketType is 'lucky_draw', ticketNumbers should not be provided (random selection)
     // If ticketType is 'number_picker', ticketNumbers must be provided
@@ -351,6 +352,7 @@ export const addOrUpdateCartItem = async (
     }
 
     // If existing item, remove old tickets first
+    // CRITICAL: Only delete cart-only reservations (without orderId)
     if (existingItem) {
       // Delete old reserved tickets for this cart item
       await Ticket.deleteMany({
@@ -358,6 +360,7 @@ export const addOrUpdateCartItem = async (
         userId: req.user._id,
         status: TicketStatus.RESERVED,
         ticketNumber: { $in: existingItem.ticketNumbers || [] },
+        orderId: { $exists: false }, // Only delete cart reservations, not order reservations
       });
     }
 
@@ -366,6 +369,12 @@ export const addOrUpdateCartItem = async (
       existingItem.quantity = parsedQuantity;
       existingItem.unitPrice = ticketPriceGBP;
       existingItem.ticketNumbers = finalTicketNumbers;
+      // Update ticketsValid if provided, otherwise keep existing value or default to true
+      if (ticketsValid !== undefined) {
+        existingItem.ticketsValid = ticketsValid;
+      } else if (existingItem.ticketsValid === undefined) {
+        existingItem.ticketsValid = true;
+      }
       recalculateItemSubtotal(existingItem);
     } else {
       cart.items.push({
@@ -374,6 +383,7 @@ export const addOrUpdateCartItem = async (
         ticketNumbers: finalTicketNumbers,
         unitPrice: ticketPriceGBP,
         subtotal: Number((parsedQuantity * ticketPriceGBP).toFixed(2)),
+        ticketsValid: ticketsValid !== undefined ? ticketsValid : true, // Default to true if not provided
       } as any);
     }
 
@@ -402,7 +412,7 @@ export const updateCartItem = async (
       throw new ApiError('Not authorized', 401);
     }
 
-    const { quantity, ticketNumbers, ticketType } = req.body;
+    const { quantity, ticketNumbers, ticketType, ticketsValid } = req.body;
     const parsedQuantity = Number(quantity);
 
     if (!parsedQuantity || parsedQuantity < 1) {
@@ -584,12 +594,14 @@ export const updateCartItem = async (
     }
 
     // Delete old reserved tickets for this cart item
+    // CRITICAL: Only delete cart-only reservations (without orderId)
     if (item.ticketNumbers && item.ticketNumbers.length > 0) {
       await Ticket.deleteMany({
         competitionId: item.competitionId,
         userId: req.user._id,
         status: TicketStatus.RESERVED,
         ticketNumber: { $in: item.ticketNumbers },
+        orderId: { $exists: false }, // Only delete cart reservations, not order reservations
       });
     }
 
@@ -626,6 +638,12 @@ export const updateCartItem = async (
     item.quantity = parsedQuantity;
     item.unitPrice = ticketPriceGBP;
     item.ticketNumbers = finalTicketNumbers;
+    // Update ticketsValid if provided, otherwise keep existing value or default to true
+    if (ticketsValid !== undefined) {
+      item.ticketsValid = ticketsValid;
+    } else if (item.ticketsValid === undefined) {
+      item.ticketsValid = true;
+    }
     recalculateItemSubtotal(item);
 
     await cart.save();
@@ -665,19 +683,22 @@ export const removeCartItem = async (
     }
 
     // Delete reserved tickets for this cart item
+    // CRITICAL: Only delete cart-only reservations (without orderId)
     if (item.ticketNumbers && item.ticketNumbers.length > 0) {
-      await Ticket.deleteMany({
+      const deleteResult = await Ticket.deleteMany({
         competitionId: item.competitionId,
         userId: req.user._id,
         status: TicketStatus.RESERVED,
         ticketNumber: { $in: item.ticketNumbers },
+        orderId: { $exists: false }, // Only delete cart reservations, not order reservations
       });
       logger.info(
-        `Deleted ${item.ticketNumbers.length} reserved tickets for removed cart item`,
+        `Deleted ${deleteResult.deletedCount} cart-only reserved tickets for removed cart item`,
         {
           competitionId: item.competitionId,
           ticketNumbers: item.ticketNumbers,
           userId: req.user._id,
+          deletedCount: deleteResult.deletedCount,
         }
       );
     }
@@ -709,14 +730,26 @@ export const clearCart = async (
     const cart = await Cart.findOne({ userId: req.user._id });
     if (cart && cart.items && cart.items.length > 0) {
       // Delete all reserved tickets for all cart items
+      // CRITICAL: Only delete tickets WITHOUT orderId - tickets with orderId belong to orders
       for (const item of cart.items) {
         if (item.ticketNumbers && item.ticketNumbers.length > 0) {
-          await Ticket.deleteMany({
+          const deleteResult = await Ticket.deleteMany({
             competitionId: item.competitionId,
             userId: req.user._id,
             status: TicketStatus.RESERVED,
             ticketNumber: { $in: item.ticketNumbers },
+            orderId: { $exists: false }, // CRITICAL: Only delete cart reservations, not order reservations
           });
+          
+          logger.info(
+            `Cleared cart: Deleted ${deleteResult.deletedCount} cart-only reserved tickets for cart item`,
+            {
+              userId: req.user._id,
+              competitionId: item.competitionId,
+              ticketNumbers: item.ticketNumbers,
+              deletedCount: deleteResult.deletedCount,
+            }
+          );
         }
       }
       logger.info(
@@ -801,7 +834,7 @@ export const syncCart = async (
 
     // Then, add local cart items that don't exist in server cart
     for (const localItem of localCartItems) {
-      const { competitionId, quantity, ticketNumbers } = localItem;
+      const { competitionId, quantity, ticketNumbers, ticketsValid } = localItem;
 
       if (!competitionId || !mongoose.Types.ObjectId.isValid(competitionId)) {
         logger.warn('Skipping invalid local cart item:', localItem);
@@ -901,6 +934,7 @@ export const syncCart = async (
               ) * ticketPriceGBP
             ).toFixed(2)
           ),
+          ticketsValid: ticketsValid !== undefined ? ticketsValid : true, // Default to true if not provided
         } as any);
 
         processedCompetitionIds.add(competitionIdStr);

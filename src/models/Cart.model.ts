@@ -6,6 +6,7 @@ export interface ICartItem extends Document {
   ticketNumbers?: number[]; // Array of specific ticket numbers selected by user
   unitPrice: number;
   subtotal: number;
+  ticketsValid?: boolean; // Whether tickets are valid for draws (false if answer was incorrect, default: true)
   addedAt: Date;
   updatedAt: Date;
 }
@@ -61,6 +62,10 @@ const cartItemSchema = new Schema<ICartItem>(
       type: Number,
       required: true,
       min: [0, 'Subtotal must be zero or greater'],
+    },
+    ticketsValid: {
+      type: Boolean,
+      default: true, // Default to true - tickets are valid unless answer is incorrect
     },
     addedAt: {
       type: Date,

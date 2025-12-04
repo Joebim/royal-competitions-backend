@@ -19,6 +19,7 @@ export const addCartItemSchema = Joi.object({
       'any.invalid':
         'Ticket numbers array length must match quantity',
     }),
+  ticketsValid: Joi.boolean().optional(),
 });
 
 export const updateCartItemSchema = Joi.object({
@@ -40,6 +41,7 @@ export const updateCartItemSchema = Joi.object({
       'any.invalid':
         'Ticket numbers array length must match quantity',
     }),
+  ticketsValid: Joi.boolean().optional(),
 });
 
 export const syncCartSchema = Joi.object({
@@ -52,6 +54,7 @@ export const syncCartSchema = Joi.object({
           .items(Joi.number().integer().min(1))
           .optional()
           .allow(null),
+        ticketsValid: Joi.boolean().optional(),
       })
     )
     .required(),

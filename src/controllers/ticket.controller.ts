@@ -418,90 +418,149 @@ export const getUserTickets = async (
 /**
  * Get competition entry list (public or admin)
  * GET /api/v1/competitions/:id/entry-list
+ * Optimized with pagination and efficient queries
  */
 export const getCompetitionEntryList = async (
   req: Request,
   res: Response,
   next: NextFunction
 ) => {
+  const startTime = Date.now();
   try {
     const competitionId = req.params.id;
     const isAdmin =
       req.user?.role === 'admin' || req.user?.role === 'super_admin';
     const anonymize = !isAdmin && req.query.anonymize !== 'false';
+    
+    // Pagination parameters
+    const page = Number(req.query.page) || 1;
+    const limit = Math.min(Number(req.query.limit) || 50, 100); // Max 100 per page
+    const skip = (page - 1) * limit;
 
-    const competition = await Competition.findById(competitionId);
+    logger.info('📋 [ENTRY LIST] Fetching entry list', {
+      competitionId,
+      page,
+      limit,
+      anonymize,
+      isAdmin,
+    });
+
+    const competition = await Competition.findById(competitionId).select('title question').lean();
     if (!competition) {
       throw new ApiError('Competition not found', 404);
     }
 
-    // Get all active tickets for this competition (without populate first to get raw IDs)
-    const tickets = await Ticket.find({
-      competitionId,
-      status: TicketStatus.ACTIVE,
-    })
-      .sort({ ticketNumber: 1 })
-      .lean();
+    // OPTIMIZATION: Only create missing entries in batches, not all at once
+    // First, get count of tickets and entries to determine if we need to create entries
+    const [ticketCount, entryCount] = await Promise.all([
+      Ticket.countDocuments({
+        competitionId,
+        status: TicketStatus.ACTIVE,
+        userId: { $exists: true },
+        orderId: { $exists: true },
+      }),
+      Entry.countDocuments({ competitionId }),
+    ]);
 
-    // Get existing entries to check which tickets already have entries
-    const existingEntries = await Entry.find({
-      competitionId,
-    }).select('ticketNumber').lean();
+    // Only create missing entries if there's a significant difference (batch operation)
+    // This prevents creating entries on every request
+    if (ticketCount > entryCount && ticketCount - entryCount > 0) {
+      // Use aggregation to find tickets without entries efficiently
+      const ticketsWithoutEntries = await Ticket.aggregate([
+        {
+          $match: {
+            competitionId: new mongoose.Types.ObjectId(competitionId),
+            status: TicketStatus.ACTIVE,
+            userId: { $exists: true },
+            orderId: { $exists: true },
+          },
+        },
+        {
+          $lookup: {
+            from: 'entries',
+            let: { ticketNum: { $toString: '$ticketNumber' } },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$competitionId', new mongoose.Types.ObjectId(competitionId)] },
+                      { $eq: ['$ticketNumber', '$$ticketNum'] },
+                    ],
+                  },
+                },
+              },
+            ],
+            as: 'entry',
+          },
+        },
+        {
+          $match: {
+            entry: { $size: 0 }, // No entry exists
+          },
+        },
+        {
+          $limit: 100, // Process max 100 at a time to avoid blocking
+        },
+        {
+          $project: {
+            userId: 1,
+            competitionId: 1,
+            orderId: 1,
+            ticketNumber: 1,
+          },
+        },
+      ]);
 
-    const existingTicketNumbers = new Set(
-      existingEntries.map((e: any) => String(e.ticketNumber))
-    );
-
-    // Create entries for tickets that don't have entries yet
-    const entriesToCreate = [];
-    for (const ticket of tickets) {
-      const ticketNumberStr = String(ticket.ticketNumber);
-      if (!existingTicketNumbers.has(ticketNumberStr) && ticket.userId && ticket.orderId) {
-        // Create entry for this ticket
-        // Use a default answer if competition has no question, or empty string
+      if (ticketsWithoutEntries.length > 0) {
         const defaultAnswer = competition.question?.correctAnswer || '';
-        const isCorrect = competition.question
-          ? false // Will be set to true only if user submits correct answer
-          : true; // If no question, default to correct
+        const isCorrect = competition.question ? false : true;
 
-        entriesToCreate.push({
-          userId: ticket.userId, // This is already an ObjectId from the ticket
-          competitionId: ticket.competitionId, // This is already an ObjectId
-          orderId: ticket.orderId, // This is already an ObjectId
-          ticketNumber: ticketNumberStr,
+        const entriesToCreate = ticketsWithoutEntries.map((ticket: any) => ({
+          userId: ticket.userId,
+          competitionId: ticket.competitionId,
+          orderId: ticket.orderId,
+          ticketNumber: String(ticket.ticketNumber),
           answer: defaultAnswer,
           isCorrect: isCorrect,
-        });
-      }
-    }
+        }));
 
-    // Bulk create entries if any need to be created
-    if (entriesToCreate.length > 0) {
-      try {
-        await Entry.insertMany(entriesToCreate, { ordered: false });
-        logger.info(
-          `Created ${entriesToCreate.length} entries for competition ${competitionId}`
-        );
-      } catch (insertError: any) {
-        // Handle duplicate key errors (some entries might have been created concurrently)
-        if (insertError.code !== 11000) {
-          logger.error('Error creating entries:', insertError);
-          // Continue anyway - we'll just show existing entries
+        try {
+          await Entry.insertMany(entriesToCreate, { ordered: false });
+          logger.info(
+            `Created ${entriesToCreate.length} entries for competition ${competitionId}`
+          );
+        } catch (insertError: any) {
+          // Handle duplicate key errors (some entries might have been created concurrently)
+          if (insertError.code !== 11000) {
+            logger.error('Error creating entries:', insertError);
+          }
         }
       }
     }
 
-    // Get all entries (including newly created ones) for response
-    const allEntries = await Entry.find({
-      competitionId,
-    })
-      .populate(
-        anonymize ? '' : 'userId',
-        anonymize ? '' : 'firstName lastName email'
-      )
-      .populate('orderId', 'orderNumber')
+    // Get paginated entries with optimized populate
+    const entryQuery = Entry.find({ competitionId })
       .sort({ ticketNumber: 1 })
-      .lean();
+      .skip(skip)
+      .limit(limit)
+      .populate({
+        path: 'orderId',
+        select: 'orderNumber',
+      });
+
+    // Only populate userId if not anonymizing
+    if (!anonymize) {
+      entryQuery.populate({
+        path: 'userId',
+        select: 'firstName lastName email',
+      });
+    }
+
+    const [allEntries, totalEntries] = await Promise.all([
+      entryQuery.lean(),
+      Entry.countDocuments({ competitionId }),
+    ]);
 
     // Format response
     const entryList = allEntries.map((entry: any) => ({
@@ -519,21 +578,43 @@ export const getCompetitionEntryList = async (
       createdAt: entry.createdAt,
     }));
 
+    const duration = Date.now() - startTime;
+    logger.info('📋 [ENTRY LIST] Entry list fetched', {
+      competitionId,
+      page,
+      limit,
+      totalEntries,
+      returnedEntries: entryList.length,
+      duration: `${duration}ms`,
+    });
+
     res.json(
       ApiResponse.success(
         {
           competition: {
             id: competition._id,
             title: competition.title,
-            totalTickets: tickets.length,
-            totalEntries: allEntries.length,
+            totalTickets: ticketCount,
+            totalEntries: totalEntries,
           },
           entries: entryList,
+          pagination: {
+            page,
+            limit,
+            totalItems: totalEntries,
+            totalPages: Math.ceil(totalEntries / limit),
+          },
         },
         'Entry list retrieved successfully'
       )
     );
   } catch (error) {
+    const duration = Date.now() - startTime;
+    logger.error('📋 [ENTRY LIST] Error fetching entry list', {
+      competitionId: req.params.id,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      duration: `${duration}ms`,
+    });
     next(error);
   }
 };
@@ -553,6 +634,8 @@ export const getCompetitionTickets = async (
     const limit = Number(req.query.limit) || 50;
     const statusParam = req.query.status as string | undefined;
 
+    // Query includes ALL tickets by default (active, reserved, invalid, winner, etc.)
+    // Only filters by status if statusParam is provided
     const query: any = {
       competitionId,
     };
@@ -565,8 +648,9 @@ export const getCompetitionTickets = async (
         query.status = normalizedStatus;
       } else {
         throw new ApiError(`Invalid status: ${statusParam}. Valid values are: ${Object.values(TicketStatus).join(', ')}`, 400);
-      }
     }
+    }
+    // Note: No filter on isValid - invalid tickets (isValid: false) are included
 
     const { skip, limit: pageLimit } = getPagination(page, limit);
 
@@ -582,6 +666,7 @@ export const getCompetitionTickets = async (
     ]);
 
     // Ensure isValid and reservedUntil fields are included in response
+    // Include ALL tickets: active, reserved, invalid (isValid: false), winner, etc.
     const ticketsWithFields = tickets.map((ticket: any) => {
       const formattedTicket: any = {
         ...ticket,
@@ -589,9 +674,18 @@ export const getCompetitionTickets = async (
         status: ticket.status || 'reserved', // Ensure status is always present
       };
       
-      // Include reservedUntil if present (convert to ISO string if Date object)
-      // This is primarily for reserved tickets, but included for any ticket that has it
-      if (ticket.reservedUntil) {
+      // Always include reservedUntil for reserved tickets (convert to ISO string if Date object)
+      if (ticket.status === TicketStatus.RESERVED || ticket.status === 'reserved') {
+        if (ticket.reservedUntil) {
+          formattedTicket.reservedUntil = ticket.reservedUntil instanceof Date 
+            ? ticket.reservedUntil.toISOString() 
+            : ticket.reservedUntil;
+        } else {
+          // If reserved ticket doesn't have reservedUntil, set to null
+          formattedTicket.reservedUntil = null;
+        }
+      } else if (ticket.reservedUntil) {
+        // Include reservedUntil for other tickets if present (for completeness)
         formattedTicket.reservedUntil = ticket.reservedUntil instanceof Date 
           ? ticket.reservedUntil.toISOString() 
           : ticket.reservedUntil;

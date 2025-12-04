@@ -241,10 +241,18 @@ export const createOrder = async (
   res: Response,
   next: NextFunction
 ) => {
+  const startTime = Date.now();
   try {
+    logger.info('📦 [ORDER] ===== CREATE ORDER =====', {
+      userId: req.user?._id,
+      timestamp: new Date().toISOString(),
+    });
+
     if (!req.user) {
+      logger.warn('📦 [ORDER] Unauthorized - no user');
       throw new ApiError('Not authorized', 401);
     }
+
     const {
       competitionId,
       qty,
@@ -254,6 +262,19 @@ export const createOrder = async (
       shippingAddress,
       marketingOptIn,
     } = req.body;
+
+    logger.info('📦 [ORDER] Request received from frontend', {
+      userId: req.user._id,
+      competitionId,
+      qty,
+      ticketsReserved,
+      ticketsReservedCount: ticketsReserved?.length || 0,
+      ticketsValid,
+      hasBillingDetails: !!billingDetails,
+      billingEmail: billingDetails?.email,
+      hasShippingAddress: !!shippingAddress,
+      marketingOptIn,
+    });
 
     if (!competitionId || !qty) {
       throw new ApiError('Missing required fields: competitionId and qty', 400);
@@ -359,35 +380,34 @@ export const createOrder = async (
     }
 
     // Verify provided reserved tickets exist and are still reserved, or reserve them if they don't exist
+    // Note: We check for tickets regardless of expiry, as we'll extend them to 24 hours
     const reservedTickets = await Ticket.find({
       competitionId,
       ticketNumber: { $in: ticketsReserved },
       status: TicketStatus.RESERVED,
-      reservedUntil: { $gt: now },
     });
 
-    // If tickets don't exist or are expired, reserve them now (for guest checkout)
+    // If tickets don't exist or are expired, reserve them now (for guest checkout or expired cart reservations)
     const missingNumbers = ticketsReserved.filter(
       (num) => !existingNumbers.has(num)
     );
 
-    const expiredTickets = existingTickets.filter(
+    const expiredTicketsInValidation = existingTickets.filter(
       (t) =>
         t.status === TicketStatus.RESERVED &&
-        t.reservedUntil &&
-        new Date(t.reservedUntil) <= now
+        (t.reservedUntil === undefined || new Date(t.reservedUntil) <= now)
     );
 
-    const expiredNumbers = expiredTickets.map((t) => t.ticketNumber);
+    const expiredNumbers = expiredTicketsInValidation.map((t) => t.ticketNumber);
     const numbersToReserve = [...missingNumbers, ...expiredNumbers];
 
     if (numbersToReserve.length > 0) {
-      // Reserve missing/expired tickets
-      const reservedUntil = new Date(now.getTime() + 15 * 60 * 1000); // 15 minutes
+      // Reserve missing/expired tickets with 24-hour expiry
+      const reservedUntil = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours for orders
       const ticketsToCreate = numbersToReserve.map((ticketNumber) => ({
         competitionId,
         ticketNumber,
-        userId: req.user!._id, // Already validated at top of function
+        userId: req.user?._id || undefined, // Use order userId
         status: TicketStatus.RESERVED,
         reservedUntil,
       }));
@@ -399,7 +419,7 @@ export const createOrder = async (
           {
             competitionId,
             ticketNumbers: numbersToReserve,
-            userId: req.user._id,
+            userId: req.user?._id,
           }
         );
       } catch (insertError: any) {
@@ -418,7 +438,6 @@ export const createOrder = async (
       competitionId,
       ticketNumber: { $in: ticketsReserved },
       status: TicketStatus.RESERVED,
-      reservedUntil: { $gt: now },
     });
 
     if (finalReservedTickets.length !== qty) {
@@ -435,7 +454,7 @@ export const createOrder = async (
         (num: number) => !foundNumbers.has(num)
       );
 
-      const expiredTickets = allTickets.filter(
+      const expiredTicketsInError = allTickets.filter(
         (t: any) =>
           t.status === TicketStatus.RESERVED &&
           t.reservedUntil &&
@@ -459,13 +478,13 @@ export const createOrder = async (
       const foundAfterReserve = new Set(
         allTicketsAfterReserve.map((t: any) => t.ticketNumber)
       );
-      const stillMissing = ticketsReserved.filter(
+      const stillMissingAfterReserve = ticketsReserved.filter(
         (num) => !foundAfterReserve.has(num)
       );
 
-      if (stillMissing.length > 0) {
+      if (stillMissingAfterReserve.length > 0) {
         details.push(
-          `${stillMissing.length} ticket(s) could not be reserved`
+          `${stillMissingAfterReserve.length} ticket(s) could not be reserved`
         );
       }
 
@@ -482,7 +501,7 @@ export const createOrder = async (
         requestedQuantity: qty,
         foundReserved: reservedTickets.length,
         missingNumbers,
-        expiredCount: expiredTickets.length,
+        expiredCount: expiredTicketsInError.length,
         purchasedCount: purchasedTickets.length,
         allTicketsStatus: allTickets.map((t: any) => ({
           ticketNumber: t.ticketNumber,
@@ -536,8 +555,280 @@ export const createOrder = async (
       marketingOptIn: marketingOptIn || false,
     });
 
+    // IMMEDIATELY extend all reserved tickets to 24 hours and associate with order
+    // This must happen synchronously before response is sent
+    const reservedUntil24Hours = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours
+    
+    logger.info('📦 [ORDER] Starting ticket reservation and association', {
+      userId: req.user._id,
+      orderId: order._id,
+      competitionId,
+      ticketNumbers: ticketsReserved,
+      reservedUntil: reservedUntil24Hours.toISOString(),
+    });
+
+    // First, check ALL tickets (including expired ones) - we'll update or recreate them
+    const ticketsBeforeUpdate = await Ticket.find({
+      competitionId,
+      ticketNumber: { $in: ticketsReserved },
+    }).lean();
+
+    logger.info('📦 [ORDER] Tickets found in database before association', {
+      userId: req.user._id,
+      orderId: order._id,
+      competitionId,
+      expectedCount: qty,
+      foundCount: ticketsBeforeUpdate.length,
+      ticketNumbers: ticketsReserved,
+      foundTickets: ticketsBeforeUpdate.map((t: any) => ({
+        ticketNumber: t.ticketNumber,
+        status: t.status,
+        orderId: t.orderId,
+        userId: t.userId,
+        reservedUntil: t.reservedUntil,
+        isExpired: t.reservedUntil ? new Date(t.reservedUntil) <= now : true,
+      })),
+    });
+
+    // Separate tickets into: existing (any status), missing, expired
+    const foundTicketNumbers = new Set(ticketsBeforeUpdate.map((t: any) => t.ticketNumber));
+    const missingTicketNumbers = ticketsReserved.filter((num: number) => !foundTicketNumbers.has(num));
+    
+    // Check for expired tickets (even if they exist)
+    const expiredTicketsInOrder = ticketsBeforeUpdate.filter((t: any) => 
+      t.status === TicketStatus.RESERVED && 
+      (!t.reservedUntil || new Date(t.reservedUntil) <= now)
+    );
+    const expiredTicketNumbers = expiredTicketsInOrder.map((t: any) => t.ticketNumber);
+    
+    logger.info('📦 [ORDER] Ticket analysis', {
+      userId: req.user._id,
+      orderId: order._id,
+      missingCount: missingTicketNumbers.length,
+      missingTickets: missingTicketNumbers,
+      expiredCount: expiredTicketsInOrder.length,
+      expiredTickets: expiredTicketNumbers,
+    });
+
+    // Recreate missing tickets
+    if (missingTicketNumbers.length > 0) {
+      logger.warn('📦 [ORDER] Recreating missing tickets', {
+        userId: req.user._id,
+        orderId: order._id,
+        competitionId,
+        missingTicketNumbers,
+      });
+
+      const ticketsToCreate = missingTicketNumbers.map((ticketNumber) => ({
+        competitionId,
+        ticketNumber,
+        userId: req.user?._id || undefined,
+        status: TicketStatus.RESERVED,
+        reservedUntil: reservedUntil24Hours,
+        orderId: order._id, // Associate immediately
+      }));
+
+      try {
+        await Ticket.insertMany(ticketsToCreate, { ordered: false });
+        logger.info('📦 [ORDER] Missing tickets recreated', {
+          userId: req.user._id,
+          orderId: order._id,
+          ticketsCreated: missingTicketNumbers.length,
+          ticketNumbers: missingTicketNumbers,
+        });
+      } catch (insertError: any) {
+        if (insertError.code === 11000) {
+          logger.warn('📦 [ORDER] Some tickets were created concurrently', {
+            userId: req.user._id,
+            orderId: order._id,
+          });
+        } else {
+          throw insertError;
+        }
+      }
+    }
+
+    // Update ALL tickets (including expired ones) to associate with order and extend expiry
+    // CRITICAL: Don't filter by reservedUntil - update even expired tickets
+    // The cleanup job only deletes tickets without orderId, so once we set orderId, they're safe
+    logger.info('📦 [ORDER] Updating tickets to associate with order', {
+      userId: req.user._id,
+      orderId: order._id,
+      competitionId,
+      ticketNumbers: ticketsReserved,
+      reservedUntil: reservedUntil24Hours.toISOString(),
+    });
+
+    const ticketUpdateResult = await Ticket.updateMany(
+      {
+        competitionId,
+        ticketNumber: { $in: ticketsReserved },
+        status: TicketStatus.RESERVED, // Only update RESERVED tickets
+        // Don't filter by reservedUntil - update even expired ones
+      },
+      {
+        $set: {
+          reservedUntil: reservedUntil24Hours,
+          orderId: order._id, // Associate tickets with order - THIS PROTECTS THEM FROM CLEANUP
+        },
+      }
+    );
+
+    logger.info('📦 [ORDER] Ticket update result', {
+      userId: req.user._id,
+      orderId: order._id,
+      competitionId,
+      ticketsMatched: ticketUpdateResult.matchedCount,
+      ticketsModified: ticketUpdateResult.modifiedCount,
+      ticketNumbers: ticketsReserved,
+    });
+
+    // Log ticket association for debugging
+    logger.info(
+      `Associated ${ticketUpdateResult.modifiedCount} tickets with order ${order._id}`,
+      {
+        orderId: order._id,
+        competitionId,
+        ticketNumbers: ticketsReserved,
+        ticketsMatched: ticketUpdateResult.matchedCount,
+        ticketsUpdated: ticketUpdateResult.modifiedCount,
+      }
+    );
+
+    // Verify tickets are associated (critical check)
+    logger.info('📦 [ORDER] Verifying ticket association', {
+      userId: req.user._id,
+      orderId: order._id,
+      competitionId,
+      ticketNumbers: ticketsReserved,
+    });
+
+    const associatedTickets = await Ticket.find({
+      competitionId,
+      ticketNumber: { $in: ticketsReserved },
+      orderId: order._id,
+      status: TicketStatus.RESERVED,
+    });
+
+    logger.info('📦 [ORDER] Ticket association verification result', {
+      userId: req.user._id,
+      orderId: order._id,
+      expectedCount: qty,
+      foundCount: associatedTickets.length,
+      associatedTicketNumbers: associatedTickets.map((t) => t.ticketNumber),
+      associatedTickets: associatedTickets.map((t: any) => ({
+        ticketNumber: t.ticketNumber,
+        status: t.status,
+        orderId: t.orderId,
+        reservedUntil: t.reservedUntil,
+        userId: t.userId,
+      })),
+    });
+
+    if (associatedTickets.length !== qty) {
+      // This is a critical error - tickets must be associated before payment
+      logger.error('📦 [ORDER] CRITICAL: Not all tickets associated', {
+        userId: req.user._id,
+        orderId: order._id,
+        expected: qty,
+        found: associatedTickets.length,
+        ticketNumbers: ticketsReserved,
+        associatedTicketNumbers: associatedTickets.map((t) => t.ticketNumber),
+      });
+      
+      // Try to find what happened to the missing tickets
+      const allTickets = await Ticket.find({
+        competitionId,
+        ticketNumber: { $in: ticketsReserved },
+      }).lean();
+      
+      logger.error('📦 [ORDER] All tickets status check', {
+        userId: req.user._id,
+        orderId: order._id,
+        allTickets: allTickets.map((t: any) => ({
+          ticketNumber: t.ticketNumber,
+          status: t.status,
+          orderId: t.orderId,
+          userId: t.userId,
+          reservedUntil: t.reservedUntil,
+          isExpired: t.reservedUntil ? new Date(t.reservedUntil) <= now : true,
+        })),
+      });
+
+      // CRITICAL: Recreate missing tickets immediately
+      const associatedTicketNumbers = new Set(associatedTickets.map((t) => t.ticketNumber));
+      const stillMissing = ticketsReserved.filter((num: number) => !associatedTicketNumbers.has(num));
+      
+      if (stillMissing.length > 0) {
+        logger.error('📦 [ORDER] CRITICAL: Recreating missing tickets', {
+          userId: req.user._id,
+          orderId: order._id,
+          competitionId,
+          missingTicketNumbers: stillMissing,
+        });
+
+        const ticketsToCreate = stillMissing.map((ticketNumber) => ({
+          competitionId,
+          ticketNumber,
+          userId: req.user?._id || undefined,
+          status: TicketStatus.RESERVED,
+          reservedUntil: reservedUntil24Hours,
+          orderId: order._id,
+        }));
+
+        try {
+          await Ticket.insertMany(ticketsToCreate, { ordered: false });
+          logger.info('📦 [ORDER] CRITICAL: Missing tickets recreated', {
+            userId: req.user._id,
+            orderId: order._id,
+            ticketsCreated: stillMissing.length,
+            ticketNumbers: stillMissing,
+          });
+        } catch (insertError: any) {
+          logger.error('📦 [ORDER] CRITICAL: Failed to recreate tickets', {
+            userId: req.user._id,
+            orderId: order._id,
+            error: insertError.message,
+            missingTicketNumbers: stillMissing,
+          });
+          // Don't throw - let payment handler try to fix it
+        }
+      }
+    } else {
+      logger.info('📦 [ORDER] All tickets successfully associated', {
+        userId: req.user._id,
+        orderId: order._id,
+        ticketCount: associatedTickets.length,
+        ticketNumbers: associatedTickets.map((t) => t.ticketNumber),
+      });
+    }
+
     // Order created - Square payment will be created when frontend calls /api/v1/payments/create-payment
     const orderId = String(order._id);
+
+    // Final verification - check tickets one more time before sending response
+    const finalTicketsCheck = await Ticket.find({
+      competitionId,
+      ticketNumber: { $in: ticketsReserved },
+      orderId: order._id,
+      status: TicketStatus.RESERVED,
+    });
+
+    const duration = Date.now() - startTime;
+    logger.info('📦 [ORDER] ===== ORDER CREATION COMPLETED =====', {
+      userId: req.user._id,
+      orderId: order._id,
+      orderNumber: order.orderNumber,
+      competitionId,
+      quantity: qty,
+      ticketsReserved,
+      ticketsReservedCount: ticketsReserved.length,
+      finalTicketsCount: finalTicketsCheck.length,
+      finalTicketNumbers: finalTicketsCheck.map((t) => t.ticketNumber),
+      ticketsValid,
+      amount: order.amount,
+      duration: `${duration}ms`,
+    });
 
     // Send response immediately to prevent timeout
     res.status(201).json(
