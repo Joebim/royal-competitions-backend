@@ -82,6 +82,12 @@ import {
   removeHeroCompetition,
   getAboutPageForAdmin,
   createOrUpdateAboutPage,
+  getHomePageSections,
+  getHomePageSectionByType,
+  createHomePageSection,
+  updateHomePageSection,
+  reorderHomePageSections,
+  deleteHomePageSection,
 } from '../controllers/content.controller';
 import {
   getAllCategoriesForAdmin,
@@ -98,6 +104,9 @@ import {
   updateHeroCompetitionSchema,
   createAboutPageSchema,
   updateAboutPageSchema,
+  createHomePageSectionSchema,
+  updateHomePageSectionSchema,
+  reorderSectionsSchema,
 } from '../validators/content.validator';
 import {
   createCategorySchema,
@@ -247,6 +256,26 @@ router.put(
   validate(updateAboutPageSchema),
   createOrUpdateAboutPage
 );
+
+// Content management - Home Page Sections
+router.get('/content/home/sections', getHomePageSections);
+router.get('/content/home/sections/:type', getHomePageSectionByType);
+router.post(
+  '/content/home/sections',
+  validate(createHomePageSectionSchema),
+  createHomePageSection
+);
+router.put(
+  '/content/home/sections/:type',
+  validate(updateHomePageSectionSchema),
+  updateHomePageSection
+);
+router.patch(
+  '/content/home/sections/reorder',
+  validate(reorderSectionsSchema),
+  reorderHomePageSections
+);
+router.delete('/content/home/sections/:type', deleteHomePageSection);
 
 // Category management
 router.get('/categories', getAllCategoriesForAdmin);

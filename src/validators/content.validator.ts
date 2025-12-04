@@ -146,3 +146,10 @@ export const updateAboutPageSchema = Joi.object({
   isActive: Joi.boolean().optional(),
 });
 
+// Home Page Section Validators
+export {
+  createHomePageSectionSchema,
+  updateHomePageSectionSchema,
+  reorderSectionsSchema,
+} from './homePageSection.validator';
+

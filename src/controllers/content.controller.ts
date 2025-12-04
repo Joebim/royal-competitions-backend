@@ -11,6 +11,8 @@ import {
   FAQ,
   Winner,
   AboutPage,
+  HomePageSection,
+  HomePageSectionType,
 } from '../models';
 import { CompetitionStatus } from '../models/Competition.model';
 import { ApiResponse } from '../utils/apiResponse';
@@ -148,6 +150,19 @@ export const getHomeContent = async (
   next: NextFunction
 ) => {
   try {
+    // Initialize default sections if they don't exist
+    const sectionCount = await HomePageSection.countDocuments();
+    if (sectionCount === 0) {
+      const defaultSections = [
+        { type: HomePageSectionType.COMPETITIONS, order: 0, heading: 'Live Competitions', subheading: 'Enter now for your chance to win', isActive: true },
+        { type: HomePageSectionType.CHAMPIONS, order: 1, heading: 'Our Champions', subheading: 'Meet our recent winners', isActive: true },
+        { type: HomePageSectionType.STATS, order: 2, heading: 'Our Impact', subheading: 'Join thousands of happy winners', isActive: true },
+        { type: HomePageSectionType.RECENT_DRAWS, order: 3, heading: 'Recent Draws', subheading: 'See who won recently', isActive: true },
+        { type: HomePageSectionType.REVIEWS, order: 4, heading: 'What Our Customers Say', subheading: 'Real reviews from real winners', isActive: true },
+      ];
+      await HomePageSection.insertMany(defaultSections);
+    }
+
     if (homeCache.data && Date.now() < homeCache.expiresAt) {
       res.json(ApiResponse.success(homeCache.data, 'Home content retrieved'));
       return;
@@ -223,8 +238,62 @@ export const getHomeContent = async (
       ? formatCompetitionCard(heroCompetition)
       : null;
 
+    // Get section configuration (ordered by order field)
+    const sections = await HomePageSection.find({ isActive: true })
+      .sort({ order: 1 })
+      .lean();
+
+    // Create a map of section type to section config
+    const sectionMap = new Map();
+    sections.forEach((section: any) => {
+      sectionMap.set(section.type, {
+        heading: section.heading,
+        subheading: section.subheading,
+        order: section.order,
+      });
+    });
+
+    // Build sections array with data and configuration
+    const sectionsData: any[] = [];
+    
+    sections.forEach((section: any) => {
+      let sectionData: any = {
+        type: section.type,
+        heading: section.heading || null,
+        subheading: section.subheading || null,
+      };
+
+      // Add data based on section type
+      switch (section.type) {
+        case HomePageSectionType.COMPETITIONS:
+          sectionData.competitions = competitions.map(formatCompetitionCard);
+          break;
+        case HomePageSectionType.CHAMPIONS:
+          sectionData.champions = champions.map(formatChampionCard);
+          break;
+        case HomePageSectionType.STATS:
+          sectionData.stats = stats;
+          break;
+        case HomePageSectionType.RECENT_DRAWS:
+          sectionData.recentDraws = draws.map((draw: any) => {
+            const winner = winnerMap.get(draw._id.toString());
+            const competition = draw.competitionId;
+            return formatDrawCard(draw, winner, competition);
+          });
+          break;
+        case HomePageSectionType.REVIEWS:
+          sectionData.reviews = reviews.map(formatReviewCard);
+          break;
+      }
+
+      sectionsData.push(sectionData);
+    });
+
+    // For backward compatibility, also include flat structure
     const data = {
       hero,
+      sections: sectionsData, // New structured format with sections
+      // Legacy flat format (for backward compatibility)
       competitions: competitions.map(formatCompetitionCard),
       champions: champions.map(formatChampionCard),
       stats,
@@ -920,6 +989,253 @@ export const createOrUpdateAboutPage = async (
           )
         );
     }
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Home Page Section Management (Admin)
+
+/**
+ * @desc    Get all home page sections (Admin)
+ * @route   GET /api/v1/admin/content/home/sections
+ * @access  Private/Admin
+ */
+export const getHomePageSections = async (
+  _req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const sections = await HomePageSection.find()
+      .sort({ order: 1 })
+      .lean();
+
+    res.json(
+      ApiResponse.success({ sections }, 'Home page sections retrieved successfully')
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Get single home page section by type (Admin)
+ * @route   GET /api/v1/admin/content/home/sections/:type
+ * @access  Private/Admin
+ */
+export const getHomePageSectionByType = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { type } = req.params;
+
+    if (!Object.values(HomePageSectionType).includes(type as HomePageSectionType)) {
+      throw new ApiError(`Invalid section type: ${type}`, 400, true, {
+        type: [`Invalid section type. Valid types are: ${Object.values(HomePageSectionType).join(', ')}`],
+      });
+    }
+
+    const section = await HomePageSection.findOne({ type }).lean();
+
+    if (!section) {
+      throw new ApiError(`Section with type '${type}' does not exist`, 404, true, {
+        type: [`Section with type '${type}' does not exist`],
+      });
+    }
+
+    res.json(
+      ApiResponse.success({ section }, 'Home page section retrieved successfully')
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Create home page section (Admin)
+ * @route   POST /api/v1/admin/content/home/sections
+ * @access  Private/Admin
+ */
+export const createHomePageSection = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { type, order, heading, subheading, isActive } = req.body;
+
+    // Check if section with type already exists
+    const existingSection = await HomePageSection.findOne({ type });
+    if (existingSection) {
+      throw new ApiError(`Section with type '${type}' already exists`, 409, true, {
+        type: [`Section with type '${type}' already exists`],
+      });
+    }
+
+    const section = await HomePageSection.create({
+      type,
+      order,
+      heading,
+      subheading,
+      isActive: isActive !== undefined ? isActive : true,
+    });
+
+    // Clear home cache to force refresh
+    homeCache = {
+      data: null,
+      expiresAt: 0,
+    };
+
+    res
+      .status(201)
+      .json(
+        ApiResponse.success({ section }, 'Home page section created successfully')
+      );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Update home page section (Admin)
+ * @route   PUT /api/v1/admin/content/home/sections/:type
+ * @access  Private/Admin
+ */
+export const updateHomePageSection = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { type } = req.params;
+    const { order, heading, subheading, isActive } = req.body;
+
+    if (!Object.values(HomePageSectionType).includes(type as HomePageSectionType)) {
+      throw new ApiError(`Invalid section type: ${type}`, 400, true, {
+        type: [`Invalid section type. Valid types are: ${Object.values(HomePageSectionType).join(', ')}`],
+      });
+    }
+
+    const section = await HomePageSection.findOne({ type });
+
+    if (!section) {
+      throw new ApiError(`Section with type '${type}' does not exist`, 404, true, {
+        type: [`Section with type '${type}' does not exist`],
+      });
+    }
+
+    if (order !== undefined) section.order = order;
+    if (heading !== undefined) section.heading = heading;
+    if (subheading !== undefined) section.subheading = subheading;
+    if (isActive !== undefined) section.isActive = isActive;
+
+    await section.save();
+
+    // Clear home cache to force refresh
+    homeCache = {
+      data: null,
+      expiresAt: 0,
+    };
+
+    res.json(
+      ApiResponse.success({ section }, 'Home page section updated successfully')
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Reorder home page sections (Admin)
+ * @route   PATCH /api/v1/admin/content/home/sections/reorder
+ * @access  Private/Admin
+ */
+export const reorderHomePageSections = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { sections } = req.body;
+
+    if (!Array.isArray(sections) || sections.length === 0) {
+      throw new ApiError('Sections array is required and must not be empty', 400, true, {
+        sections: ['Sections array is required and must not be empty'],
+      });
+    }
+
+    // Update each section's order
+    const updatePromises = sections.map(({ id, order }: { id: string; order: number }) =>
+      HomePageSection.findByIdAndUpdate(id, { order }, { new: true })
+    );
+
+    await Promise.all(updatePromises);
+
+    // Clear home cache to force refresh
+    homeCache = {
+      data: null,
+      expiresAt: 0,
+    };
+
+    // Return updated sections
+    const updatedSections = await HomePageSection.find()
+      .sort({ order: 1 })
+      .lean();
+
+    res.json(
+      ApiResponse.success(
+        { sections: updatedSections },
+        'Home page sections reordered successfully'
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Delete home page section (Admin) - soft delete by setting isActive to false
+ * @route   DELETE /api/v1/admin/content/home/sections/:type
+ * @access  Private/Admin
+ */
+export const deleteHomePageSection = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { type } = req.params;
+
+    if (!Object.values(HomePageSectionType).includes(type as HomePageSectionType)) {
+      throw new ApiError(`Invalid section type: ${type}`, 400, true, {
+        type: [`Invalid section type. Valid types are: ${Object.values(HomePageSectionType).join(', ')}`],
+      });
+    }
+
+    const section = await HomePageSection.findOne({ type });
+
+    if (!section) {
+      throw new ApiError(`Section with type '${type}' does not exist`, 404, true, {
+        type: [`Section with type '${type}' does not exist`],
+      });
+    }
+
+    // Soft delete by setting isActive to false
+    section.isActive = false;
+    await section.save();
+
+    // Clear home cache to force refresh
+    homeCache = {
+      data: null,
+      expiresAt: 0,
+    };
+
+    res.json(
+      ApiResponse.success(null, 'Home page section deleted successfully')
+    );
   } catch (error) {
     next(error);
   }

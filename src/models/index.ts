@@ -16,6 +16,7 @@ export { default as FAQ, IFAQ } from './FAQ.model';
 export { default as Event, EventType } from './Event.model';
 export { default as Category } from './Category.model';
 export { default as AboutPage, IAboutPage, ICompanyDetails, IFeature } from './AboutPage.model';
+export { default as HomePageSection, HomePageSectionType } from './HomePageSection.model';
 
 
 

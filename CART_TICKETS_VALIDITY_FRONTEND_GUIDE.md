@@ -853,3 +853,5 @@ const TicketsSummary = ({ competitionId }) => {
 For questions or issues, please contact the backend team or refer to the API documentation.
 
 
+
+
