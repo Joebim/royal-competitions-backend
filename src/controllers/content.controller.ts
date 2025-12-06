@@ -146,7 +146,7 @@ const loadStats = async () => {
 
 export const getHomeContent = async (
   _req: Request,
-  _res: Response,
+  res: Response,
   next: NextFunction
 ) => {
   try {
@@ -164,7 +164,8 @@ export const getHomeContent = async (
     }
 
     if (homeCache.data && Date.now() < homeCache.expiresAt) {
-      throw new ApiError('Hello Brian, thank you so much for your understanding. I made a mistake by not sending my colleague\'s profile to Lukasz before accepting the cancellation request. As I mentioned earlier to Lukasz, my account is currently under review, so after accepting the cancellation, I was unable to message him again because Fiverr didn\'t allow the message to go through since we no longer have an active project together. Here is the new profile of my colleague (Liam), whom I\'m working with: https://www.fiverr.com/behnjay I will send you the offer through that profile immediately after you send a message. We took the website down because we were worried we might not be able to reach you to place the order on the new account.', 500);
+      res.json(ApiResponse.success(homeCache.data, 'Home content retrieved'));
+      return;
     }
 
     const [
@@ -309,7 +310,7 @@ export const getHomeContent = async (
       expiresAt: Date.now() + CACHE_TTL_MS,
     };
 
-    throw new ApiError('Hello Brian, thank you so much for your understanding. I made a mistake by not sending my colleague\'s profile to Lukasz before accepting the cancellation request. As I mentioned earlier to Lukasz, my account is currently under review, so after accepting the cancellation, I was unable to message him again because Fiverr didn\'t allow the message to go through since we no longer have an active project together. Here is the new profile of my colleague (Liam), whom I\'m working with: https://www.fiverr.com/behnjay I will send you the offer through that profile immediately after you send a message. We took the website down because we were worried we might not be able to reach you to place the order on the new account.', 500);
+    res.json(ApiResponse.success(data, 'Home content retrieved'));
   } catch (error) {
     next(error);
   }
