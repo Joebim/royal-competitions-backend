@@ -51,7 +51,6 @@ const homePageSectionSchema = new Schema<IHomePageSection>(
   }
 );
 
-
 // Index for efficient querying by order
 homePageSectionSchema.index({ order: 1 });
 // Note: type field already has an index from unique: true, so we don't need to add it again
