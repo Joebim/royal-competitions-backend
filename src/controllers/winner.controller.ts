@@ -335,8 +335,15 @@ export const getAllWinnersForAdmin = async (
           'drawId',
           'drawTime drawMethod seed algorithm snapshotTicketCount'
         )
-        .populate('userId', 'firstName lastName email')
-        .populate('ticketId', 'ticketNumber')
+        .populate('userId', 'firstName lastName email phone')
+        .populate({
+          path: 'ticketId',
+          select: 'ticketNumber orderId',
+          populate: {
+            path: 'orderId',
+            select: 'shippingAddress',
+          },
+        })
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(pageLimit)
@@ -344,9 +351,49 @@ export const getAllWinnersForAdmin = async (
       Winner.countDocuments(filters),
     ]);
 
+    // Format winners to include phone and address
+    const formattedWinners = winners.map((winner: any) => {
+      const formatted: any = { ...winner };
+      
+      // Add phone number from user
+      if (winner.userId) {
+        formatted.user = {
+          id: winner.userId._id,
+          firstName: winner.userId.firstName,
+          lastName: winner.userId.lastName,
+          email: winner.userId.email,
+          phone: winner.userId.phone || null,
+        };
+        delete formatted.userId;
+      } else {
+        formatted.user = null;
+        delete formatted.userId;
+      }
+
+      // Add address from order (via ticket)
+      if (winner.ticketId?.orderId?.shippingAddress) {
+        formatted.address = winner.ticketId.orderId.shippingAddress;
+      } else {
+        formatted.address = null;
+      }
+
+      // Keep ticket info but remove nested orderId
+      if (winner.ticketId) {
+        formatted.ticket = {
+          id: winner.ticketId._id,
+          ticketNumber: winner.ticketId.ticketNumber,
+        };
+      } else {
+        formatted.ticket = null;
+      }
+      delete formatted.ticketId;
+
+      return formatted;
+    });
+
     res.json(
       ApiResponse.success(
-        { winners },
+        { winners: formattedWinners },
         'Winners retrieved successfully',
         buildPaginationMeta(page, pageLimit, total)
       )
@@ -372,15 +419,59 @@ export const getWinnerByIdForAdmin = async (
         'drawId',
         'drawTime drawMethod seed algorithm snapshotTicketCount'
       )
-      .populate('userId', 'firstName lastName email')
-      .populate('ticketId', 'ticketNumber')
+      .populate('userId', 'firstName lastName email phone')
+      .populate({
+        path: 'ticketId',
+        select: 'ticketNumber orderId',
+        populate: {
+          path: 'orderId',
+          select: 'shippingAddress',
+        },
+      })
       .lean();
 
     if (!winner) {
       throw new ApiError('Winner not found', 404);
     }
 
-    res.json(ApiResponse.success({ winner }, 'Winner retrieved successfully'));
+    // Format winner to include phone and address
+    const formattedWinner: any = { ...winner };
+
+    // Add phone number from user
+    if (winner.userId) {
+      const user = winner.userId as any;
+      formattedWinner.user = {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        phone: user.phone || null,
+      };
+      delete formattedWinner.userId;
+    } else {
+      formattedWinner.user = null;
+      delete formattedWinner.userId;
+    }
+
+    // Add address from order (via ticket)
+    if ((winner.ticketId as any)?.orderId?.shippingAddress) {
+      formattedWinner.address = (winner.ticketId as any).orderId.shippingAddress;
+    } else {
+      formattedWinner.address = null;
+    }
+
+    // Keep ticket info but remove nested orderId
+    if (winner.ticketId) {
+      formattedWinner.ticket = {
+        id: (winner.ticketId as any)._id,
+        ticketNumber: (winner.ticketId as any).ticketNumber,
+      };
+    } else {
+      formattedWinner.ticket = null;
+    }
+    delete formattedWinner.ticketId;
+
+    res.json(ApiResponse.success({ winner: formattedWinner }, 'Winner retrieved successfully'));
   } catch (error) {
     next(error);
   }

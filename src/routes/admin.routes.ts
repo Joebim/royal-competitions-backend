@@ -12,7 +12,7 @@ import {
 import {
   runDraw,
   addManualWinner,
-  getDraw,
+  getDrawForAdmin,
   updateDraw,
   verifyDraw,
   getAllDrawsForAdmin,
@@ -175,7 +175,7 @@ router.post('/competitions/:id/run-draw', runDraw);
 router.post('/competitions/:id/add-winner', addManualWinner);
 router.get('/competitions/:id/tickets', getCompetitionTickets);
 router.delete('/tickets/:id', deleteTicket);
-router.get('/draws/:id', getDraw);
+router.get('/draws/:id', getDrawForAdmin);
 router.put('/draws/:id', validate(updateDrawSchema), updateDraw);
 router.delete('/draws/:id', deleteDraw);
 router.get('/draws/:id/verify', verifyDraw);

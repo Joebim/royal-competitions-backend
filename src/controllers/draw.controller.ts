@@ -750,6 +750,58 @@ export const getDraw = async (
 };
 
 /**
+ * Get single draw for admin (with full details)
+ * GET /api/v1/admin/draws/:id
+ */
+export const getDrawForAdmin = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const draw = await Draw.findById(req.params.id)
+      .populate('competitionId', 'title prize prizeValue images')
+      .populate('initiatedBy', 'firstName lastName email')
+      .lean();
+
+    if (!draw) {
+      throw new ApiError('Draw not found', 404);
+    }
+
+    // Get winners with full details
+    const winners = await Winner.find({ drawId: draw._id })
+      .populate('userId', 'firstName lastName email phone')
+      .populate('ticketId', 'ticketNumber')
+      .lean();
+
+    res.json(
+      ApiResponse.success(
+        {
+          draw: {
+            ...draw,
+            drawDate: draw.drawTime, // Explicit draw date field
+            liveUrl: draw.liveUrl,
+            urlType: draw.urlType,
+            winners,
+            winnerCount: winners.length,
+            audit: {
+              seed: draw.seed,
+              algorithm: draw.algorithm,
+              snapshotTicketCount: draw.snapshotTicketCount,
+              snapshot: draw.snapshot,
+              result: draw.result,
+            },
+          },
+        },
+        'Draw retrieved successfully'
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Update draw (admin only)
  * PUT /api/v1/admin/draws/:id
  */
@@ -1007,14 +1059,59 @@ export const getAllDrawsForAdmin = async (
       filters.drawMethod = req.query.drawMethod;
     }
 
+    // Filter by completed competitions (status = 'drawn')
+    if (req.query.completed === 'true') {
+      const completedCompetitions = await Competition.find({
+        status: CompetitionStatus.DRAWN,
+      }).select('_id');
+      const competitionIds = completedCompetitions.map((c) => c._id);
+      if (competitionIds.length > 0) {
+        if (filters.competitionId) {
+          // If competitionId filter exists, intersect with completed competitions
+          const existingIds = Array.isArray(filters.competitionId.$in)
+            ? filters.competitionId.$in
+            : [filters.competitionId];
+          filters.competitionId = {
+            $in: existingIds.filter((id: any) =>
+              competitionIds.some((cid: any) => cid.toString() === id.toString())
+            ),
+          };
+        } else {
+          filters.competitionId = { $in: competitionIds };
+        }
+      } else {
+        // No completed competitions found, return empty result
+        filters.competitionId = { $in: [] };
+      }
+    }
+
     // Search by competition title
     if (req.query.search) {
-      const competitions = await Competition.find({
+      const searchFilter: any = {
         title: { $regex: req.query.search, $options: 'i' },
-      }).select('_id');
+      };
+      
+      // If completed filter is active, also filter by status
+      if (req.query.completed === 'true') {
+        searchFilter.status = CompetitionStatus.DRAWN;
+      }
+      
+      const competitions = await Competition.find(searchFilter).select('_id');
       const competitionIds = competitions.map((c) => c._id);
       if (competitionIds.length > 0) {
-        filters.competitionId = { $in: competitionIds };
+        if (filters.competitionId) {
+          // Intersect with existing filter
+          const existingIds = Array.isArray(filters.competitionId.$in)
+            ? filters.competitionId.$in
+            : [filters.competitionId];
+          filters.competitionId = {
+            $in: existingIds.filter((id: any) =>
+              competitionIds.some((cid: any) => cid.toString() === id.toString())
+            ),
+          };
+        } else {
+          filters.competitionId = { $in: competitionIds };
+        }
       } else {
         // No competitions found, return empty result
         filters.competitionId = { $in: [] };
@@ -1023,7 +1120,7 @@ export const getAllDrawsForAdmin = async (
 
     const [draws, total] = await Promise.all([
       Draw.find(filters)
-        .populate('competitionId', 'title prize prizeValue')
+        .populate('competitionId', 'title prize prizeValue status drawnAt')
         .populate('initiatedBy', 'firstName lastName email')
         .sort({ drawTime: -1 })
         .skip(skip)
@@ -1042,6 +1139,13 @@ export const getAllDrawsForAdmin = async (
 
         return {
           ...draw,
+          drawDate: draw.drawTime, // Explicit draw date field
+          competition: {
+            ...draw.competitionId,
+            status: draw.competitionId?.status || null,
+            drawnAt: draw.competitionId?.drawnAt || null,
+            isCompleted: draw.competitionId?.status === CompetitionStatus.DRAWN,
+          },
           winners,
           winnerCount: winners.length,
         };
