@@ -657,7 +657,10 @@ export const getCompetitionTickets = async (
     const [tickets, total] = await Promise.all([
       Ticket.find(query)
         .populate('userId', 'firstName lastName email phone')
-        .populate('orderId', 'paymentStatus')
+        .populate({
+          path: 'orderId',
+          select: 'paymentStatus shippingAddress',
+        })
         .sort({ ticketNumber: 1 })
         .skip(skip)
         .limit(pageLimit)
@@ -665,14 +668,47 @@ export const getCompetitionTickets = async (
       Ticket.countDocuments(query),
     ]);
 
-    // Ensure isValid and reservedUntil fields are included in response
-    // Include ALL tickets: active, reserved, invalid (isValid: false), winner, etc.
+    // Format tickets with user details and shipping address
     const ticketsWithFields = tickets.map((ticket: any) => {
       const formattedTicket: any = {
         ...ticket,
         isValid: ticket.isValid !== undefined ? ticket.isValid : true, // Default to true if not set
         status: ticket.status || 'reserved', // Ensure status is always present
       };
+      
+      // Format user details
+      if (ticket.userId) {
+        const user = ticket.userId as any;
+        formattedTicket.user = {
+          id: user._id,
+          fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || null,
+          firstName: user.firstName || null,
+          lastName: user.lastName || null,
+          email: user.email || null,
+          phone: user.phone || null,
+        };
+      } else {
+        formattedTicket.user = null;
+      }
+      delete formattedTicket.userId;
+
+      // Add shipping address from order
+      if (ticket.orderId?.shippingAddress) {
+        formattedTicket.shippingAddress = ticket.orderId.shippingAddress;
+      } else {
+        formattedTicket.shippingAddress = null;
+      }
+
+      // Keep order info but remove nested shippingAddress
+      if (ticket.orderId) {
+        formattedTicket.order = {
+          id: ticket.orderId._id,
+          paymentStatus: ticket.orderId.paymentStatus,
+        };
+      } else {
+        formattedTicket.order = null;
+      }
+      delete formattedTicket.orderId;
       
       // Always include reservedUntil for reserved tickets (convert to ISO string if Date object)
       if (ticket.status === TicketStatus.RESERVED || ticket.status === 'reserved') {

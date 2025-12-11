@@ -17,6 +17,7 @@ import {
   verifyDraw,
   getAllDrawsForAdmin,
   deleteDraw,
+  createDrawForAdminTriggered,
 } from '../controllers/draw.controller';
 import { getCompetitionTickets, deleteTicket } from '../controllers/ticket.controller';
 import {
@@ -119,7 +120,7 @@ import {
   deleteReviewForAdmin,
 } from '../controllers/review.controller';
 import { updateReviewSchema } from '../validators/review.validator';
-import { updateDrawSchema } from '../validators/draw.validator';
+import { updateDrawSchema, createDrawForAdminTriggeredSchema } from '../validators/draw.validator';
 import {
   getAllWinnersForAdmin,
   getWinnerByIdForAdmin,
@@ -171,6 +172,7 @@ router.delete('/competitions/:id', superAdminOnly, deleteCompetition);
 
 // Draw management
 router.get('/draws', getAllDrawsForAdmin);
+router.post('/draws', validate(createDrawForAdminTriggeredSchema), createDrawForAdminTriggered);
 router.post('/competitions/:id/run-draw', runDraw);
 router.post('/competitions/:id/add-winner', addManualWinner);
 router.get('/competitions/:id/tickets', getCompetitionTickets);

@@ -32,7 +32,21 @@ export const updateDrawSchema = Joi.object({
   evidenceUrl: Joi.string().uri().trim().allow('', null).optional(),
   liveUrl: Joi.string().uri().trim().allow('', null).optional(),
   urlType: Joi.string()
-    .valid('youtube', 'vimeo', 'twitch', 'custom', 'other')
+    .valid('youtube', 'vimeo', 'twitch', 'facebook', 'custom', 'other')
     .allow('', null)
     .optional(),
+});
+
+export const createDrawForAdminTriggeredSchema = Joi.object({
+  competitionId: Joi.string().required().messages({
+    'any.required': 'Competition ID is required',
+  }),
+  numWinners: Joi.number().integer().min(1).default(1).optional(),
+  reserveWinners: Joi.number().integer().min(0).default(3).optional(),
+  liveUrl: Joi.string().uri().trim().allow('', null).optional(),
+  urlType: Joi.string()
+    .valid('youtube', 'vimeo', 'twitch', 'facebook', 'custom', 'other')
+    .allow('', null)
+    .optional(),
+  notes: Joi.string().trim().max(1000).allow('', null).optional(),
 });

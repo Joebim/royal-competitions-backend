@@ -38,8 +38,9 @@ const generateClaimCode = (): string => {
 };
 
 /**
- * Run draw for a competition (admin-triggered)
+ * Run draw for a competition (manual draw only)
  * POST /api/v1/admin/competitions/:id/run-draw
+ * Only works for competitions with drawMode: MANUAL
  */
 export const runDraw = async (
   req: Request,
@@ -89,6 +90,14 @@ export const runDraw = async (
         : await Competition.findById(competitionId);
       if (!competition) {
         throw new ApiError('Competition not found', 404);
+      }
+
+      // Verify competition is manual draw
+      if (competition.drawMode !== DrawMode.MANUAL) {
+        throw new ApiError(
+          'This endpoint only works for competitions with drawMode: manual',
+          400
+        );
       }
 
       // Check if competition can be drawn
@@ -144,10 +153,10 @@ export const runDraw = async (
         seed,
         results,
         snapshot,
-        DrawMethod.ADMIN_TRIGGERED,
+        DrawMethod.MANUAL,
         userId,
         notes,
-        undefined, // evidenceUrl (not used for admin-triggered)
+        undefined, // evidenceUrl
         liveUrl,
         urlType
       );
@@ -177,7 +186,7 @@ export const runDraw = async (
               entityId: draw._id,
               competitionId,
               payload: {
-                drawMethod: DrawMethod.ADMIN_TRIGGERED,
+                drawMethod: DrawMethod.MANUAL,
                 numWinners,
                 reserveWinners,
                 seed,
@@ -371,7 +380,7 @@ export const runDraw = async (
             entityId: draw._id,
             competitionId,
             payload: {
-              drawMethod: DrawMethod.ADMIN_TRIGGERED,
+              drawMethod: DrawMethod.MANUAL,
               numWinners,
               reserveWinners,
               seed,
@@ -1266,6 +1275,311 @@ export const deleteDraw = async (
       )
     );
   } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Create draw for admin-triggered competition
+ * POST /api/v1/admin/draws
+ * Only works for competitions with drawMode: ADMIN_TRIGGERED
+ */
+export const createDrawForAdminTriggered = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    if (!req.user) {
+      throw new ApiError('Not authorized', 401);
+    }
+
+    const userId = String(req.user._id);
+    const { competitionId, numWinners = 1, reserveWinners = 3, liveUrl, urlType, notes } = req.body;
+
+    if (!competitionId) {
+      throw new ApiError('Competition ID is required', 400);
+    }
+
+    // Get competition
+    const competition = await Competition.findById(competitionId);
+    if (!competition) {
+      throw new ApiError('Competition not found', 404);
+    }
+
+    // Verify competition is admin-triggered
+    if (competition.drawMode !== DrawMode.ADMIN_TRIGGERED) {
+      throw new ApiError(
+        'This endpoint only works for competitions with drawMode: admin_triggered',
+        400
+      );
+    }
+
+    // Check if competition can be drawn
+    if (competition.status === 'drawn') {
+      throw new ApiError('Competition has already been drawn', 400);
+    }
+
+    if (competition.status !== 'closed' && competition.status !== 'live' && competition.status !== 'ended') {
+      throw new ApiError('Competition must be closed, live, or ended to draw', 400);
+    }
+
+    // Close competition if still live
+    if (competition.status === 'live') {
+      competition.status = CompetitionStatus.CLOSED;
+      await competition.save();
+    }
+
+    // Run draw
+    const totalWinners = numWinners + reserveWinners;
+    let drawResult;
+    let results: IDrawResult[] = [];
+    let snapshot: any[] = [];
+    let seed: string = drawService.generateSeed();
+    let drawError: string | undefined;
+
+    try {
+      drawResult = await drawService.runDraw({
+        competitionId,
+        numWinners: totalWinners,
+      });
+      results = drawResult.results;
+      snapshot = drawResult.snapshot;
+      seed = drawResult.seed;
+    } catch (error: any) {
+      // If draw fails (e.g., no tickets), still create draw record for audit
+      logger.warn(`Draw execution failed: ${error.message}. Creating draw record with empty results.`);
+      drawError = error.message;
+      snapshot = [];
+    }
+
+    // Create draw record (always create, even if draw failed or no winners found)
+    const drawNotes = drawError 
+      ? `${notes || ''} [Draw Error: ${drawError}]`.trim()
+      : notes;
+    
+    const draw = await drawService.createDrawRecord(
+      competitionId,
+      seed,
+      results,
+      snapshot,
+      DrawMethod.ADMIN_TRIGGERED,
+      userId,
+      drawNotes,
+      undefined, // evidenceUrl
+      liveUrl,
+      urlType
+    );
+
+    // If no winners found, still update competition and create event
+    if (results.length === 0) {
+      logger.warn(
+        `No winners found for competition ${competitionId}. Draw record created for audit purposes.`
+      );
+
+      competition.status = CompetitionStatus.DRAWN;
+      competition.drawnAt = new Date();
+      await competition.save();
+
+      // Create event log
+      await Event.create({
+        type: EventType.DRAW_CREATED,
+        entity: 'draw',
+        entityId: draw._id,
+        competitionId,
+        payload: {
+          drawMethod: DrawMethod.ADMIN_TRIGGERED,
+          numWinners,
+          reserveWinners,
+          seed,
+          algorithm: 'hmac-sha256-v1',
+          note: drawError || 'No winners found - no tickets available',
+        },
+      });
+
+      res.json(
+        ApiResponse.success(
+          {
+            draw: {
+              id: draw._id,
+              competitionId,
+              drawTime: draw.drawTime,
+              seed: draw.seed,
+              algorithm: draw.algorithm,
+              snapshotTicketCount: draw.snapshotTicketCount,
+              result: draw.result,
+              winners: [],
+              note: drawError || 'No winners found',
+            },
+          },
+          drawError 
+            ? `Draw completed with error: ${drawError}` 
+            : 'Draw completed successfully (no winners found)'
+        )
+      );
+      return;
+    }
+
+    // Create winners (primary + reserves)
+    const winners = [];
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      const isPrimary = i < numWinners;
+
+      // Get ticket
+      const ticket = await Ticket.findById(result.ticketId);
+      if (!ticket) {
+        logger.warn(`Ticket ${result.ticketId} not found, skipping`);
+        continue;
+      }
+
+      // Mark ticket as winner
+      ticket.status = TicketStatus.WINNER;
+      await ticket.save();
+
+      // Create winner record
+      const winner = await Winner.create({
+        drawId: draw._id,
+        competitionId,
+        ticketId: ticket._id,
+        userId: ticket.userId,
+        ticketNumber: ticket.ticketNumber,
+        prize: competition.prize,
+        prizeValue: competition.prizeValue,
+        notified: false,
+        claimed: false,
+        claimCode: generateClaimCode(),
+      });
+
+      winners.push(winner);
+
+      // Notify primary winners
+      if (isPrimary && ticket.userId) {
+        const user = await User.findById(ticket.userId);
+        if (user && user.email) {
+          // Track "Won Competition" event in Klaviyo
+          try {
+            let prizeType = 'other';
+            const prizeLower = competition.prize.toLowerCase();
+            if (
+              prizeLower.includes('cash') ||
+              prizeLower.includes('£') ||
+              prizeLower.includes('money')
+            ) {
+              prizeType = 'cash';
+            } else if (
+              prizeLower.includes('car') ||
+              prizeLower.includes('vehicle')
+            ) {
+              prizeType = 'car';
+            } else if (
+              prizeLower.includes('holiday') ||
+              prizeLower.includes('trip') ||
+              prizeLower.includes('vacation')
+            ) {
+              prizeType = 'holiday';
+            }
+
+            await klaviyoService.trackEvent(
+              user.email,
+              'Won Competition',
+              {
+                competition_id: String(competition._id),
+                competition_name: competition.title,
+                ticket_number: ticket.ticketNumber,
+                claim_code: winner.claimCode,
+                prize_type: prizeType,
+              },
+              competition.prizeValue || competition.cashAlternative || 0
+            );
+          } catch (error: any) {
+            logger.error('Error tracking Won Competition event:', error);
+          }
+
+          // Send email notification
+          try {
+            const claimUrl = `${config.frontendUrl}/winners/${winner._id}/claim?code=${winner.claimCode}`;
+            await emailService.sendWinnerNotificationEmail({
+              email: user.email,
+              firstName: user.firstName,
+              lastName: user.lastName,
+              competitionTitle: competition.title,
+              ticketNumber: ticket.ticketNumber,
+              prize: competition.prize,
+              drawDate: draw.createdAt.toISOString(),
+              claimUrl,
+            });
+            logger.info(`Winner notification email sent to ${user.email}`);
+          } catch (error: any) {
+            logger.error('Error sending winner notification email:', error);
+          }
+
+          // Mark as notified
+          winner.notified = true;
+          winner.notifiedAt = new Date();
+          await winner.save();
+        }
+      }
+
+      // Create event log
+      await Event.create({
+        type: EventType.WINNER_SELECTED,
+        entity: 'winner',
+        entityId: winner._id,
+        userId: ticket.userId,
+        competitionId,
+        payload: {
+          ticketNumber: ticket.ticketNumber,
+          isPrimary,
+          drawId: draw._id.toString(),
+        },
+      });
+    }
+
+    // Update competition status
+    competition.status = CompetitionStatus.DRAWN;
+    competition.drawnAt = new Date();
+    await competition.save();
+
+    // Create event log
+    await Event.create({
+      type: EventType.DRAW_CREATED,
+      entity: 'draw',
+      entityId: draw._id,
+      competitionId,
+      payload: {
+        drawMethod: DrawMethod.ADMIN_TRIGGERED,
+        numWinners,
+        reserveWinners,
+        seed,
+        algorithm: 'hmac-sha256-v1',
+      },
+    });
+
+    res.json(
+      ApiResponse.success(
+        {
+          draw: {
+            id: draw._id,
+            competitionId,
+            drawTime: draw.drawTime,
+            seed: draw.seed,
+            algorithm: draw.algorithm,
+            snapshotTicketCount: draw.snapshotTicketCount,
+            result: draw.result,
+            winners: winners.map((w) => ({
+              id: w._id,
+              ticketNumber: w.ticketNumber,
+              claimCode: w.claimCode,
+              notified: w.notified,
+            })),
+          },
+        },
+        'Draw completed successfully'
+      )
+    );
+  } catch (error: any) {
+    logger.error('Error creating draw for admin-triggered competition:', error);
     next(error);
   }
 };

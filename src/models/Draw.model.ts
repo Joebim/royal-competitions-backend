@@ -116,7 +116,7 @@ const drawSchema = new Schema<IDraw>(
     urlType: {
       type: String,
       trim: true,
-      enum: ['youtube', 'vimeo', 'twitch', 'custom', 'other'],
+      enum: ['youtube', 'vimeo', 'twitch', 'facebook', 'custom', 'other'],
     },
   },
   {

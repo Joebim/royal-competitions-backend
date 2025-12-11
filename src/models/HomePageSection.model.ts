@@ -55,10 +55,7 @@ const homePageSectionSchema = new Schema<IHomePageSection>(
 homePageSectionSchema.index({ order: 1 });
 // Note: type field already has an index from unique: true, so we don't need to add it again
 
-const HomePageSection: Model<IHomePageSection> = mongoose.model<IHomePageSection>(
-  'HomePageSection',
-  homePageSectionSchema
-);
+const HomePageSection: Model<IHomePageSection> =
+  mongoose.model<IHomePageSection>('HomePageSection', homePageSectionSchema);
 
 export default HomePageSection;
-
