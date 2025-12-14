@@ -58,4 +58,5 @@ homePageSectionSchema.index({ order: 1 });
 const HomePageSection: Model<IHomePageSection> =
   mongoose.model<IHomePageSection>('HomePageSection', homePageSectionSchema);
 
+  
 export default HomePageSection;
