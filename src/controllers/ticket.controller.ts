@@ -659,7 +659,7 @@ export const getCompetitionTickets = async (
         .populate('userId', 'firstName lastName email phone')
         .populate({
           path: 'orderId',
-          select: 'paymentStatus shippingAddress',
+          select: 'paymentStatus shippingAddress billingDetails',
         })
         .sort({ ticketNumber: 1 })
         .skip(skip)
@@ -676,19 +676,35 @@ export const getCompetitionTickets = async (
         status: ticket.status || 'reserved', // Ensure status is always present
       };
       
-      // Format user details
+      // Format user details - prioritize phone from order billingDetails if user phone is not available
       if (ticket.userId) {
         const user = ticket.userId as any;
+        const orderPhone = ticket.orderId?.billingDetails?.phone;
+        const phone = user.phone || orderPhone || null;
+        
         formattedTicket.user = {
           id: user._id,
           fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || null,
           firstName: user.firstName || null,
           lastName: user.lastName || null,
           email: user.email || null,
-          phone: user.phone || null,
+          phone: phone,
         };
       } else {
-        formattedTicket.user = null;
+        // If no user, try to get details from order billingDetails
+        const billingDetails = ticket.orderId?.billingDetails;
+        if (billingDetails) {
+          formattedTicket.user = {
+            id: null,
+            fullName: `${billingDetails.firstName || ''} ${billingDetails.lastName || ''}`.trim() || null,
+            firstName: billingDetails.firstName || null,
+            lastName: billingDetails.lastName || null,
+            email: billingDetails.email || null,
+            phone: billingDetails.phone || null,
+          };
+        } else {
+          formattedTicket.user = null;
+        }
       }
       delete formattedTicket.userId;
 
@@ -699,11 +715,12 @@ export const getCompetitionTickets = async (
         formattedTicket.shippingAddress = null;
       }
 
-      // Keep order info but remove nested shippingAddress
+      // Keep order info with billingDetails
       if (ticket.orderId) {
         formattedTicket.order = {
           id: ticket.orderId._id,
           paymentStatus: ticket.orderId.paymentStatus,
+          billingDetails: ticket.orderId.billingDetails || null,
         };
       } else {
         formattedTicket.order = null;

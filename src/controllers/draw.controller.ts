@@ -1119,7 +1119,7 @@ export const getAllDrawsForAdmin = async (
             ),
           };
         } else {
-          filters.competitionId = { $in: competitionIds };
+        filters.competitionId = { $in: competitionIds };
         }
       } else {
         // No competitions found, return empty result
