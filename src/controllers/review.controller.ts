@@ -76,6 +76,42 @@ export const createReview = async (
 };
 
 /**
+ * Create review (Admin)
+ * POST /api/v1/admin/reviews
+ */
+export const createReviewForAdmin = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { title, body, rating, reviewer, location, verified, isActive } =
+      req.body;
+
+    if (!title || !body || !rating || !reviewer) {
+      throw new ApiError('Missing required fields: title, body, rating, reviewer', 422);
+    }
+
+    const review = await Review.create({
+      title,
+      body,
+      rating,
+      reviewer,
+      location,
+      verified: verified !== undefined ? verified : false,
+      isActive: isActive !== undefined ? isActive : true,
+      publishedAt: new Date(),
+    });
+
+    res.status(201).json(
+      ApiResponse.success({ review }, 'Review created successfully')
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Get all reviews for admin (includes inactive reviews)
  * GET /api/v1/admin/reviews
  */

@@ -114,12 +114,16 @@ import {
   updateCategorySchema,
 } from '../validators/category.validator';
 import {
+  createReviewForAdmin,
   getAllReviewsForAdmin,
   getReviewByIdForAdmin,
   updateReviewForAdmin,
   deleteReviewForAdmin,
 } from '../controllers/review.controller';
-import { updateReviewSchema } from '../validators/review.validator';
+import {
+  createReviewForAdminSchema,
+  updateReviewSchema,
+} from '../validators/review.validator';
 import { updateDrawSchema, createDrawForAdminTriggeredSchema } from '../validators/draw.validator';
 import {
   getAllWinnersForAdmin,
@@ -295,6 +299,7 @@ router.put(
 router.delete('/categories/:id', deleteCategoryForAdmin);
 
 // Review management
+router.post('/reviews', validate(createReviewForAdminSchema), createReviewForAdmin);
 router.get('/reviews', getAllReviewsForAdmin);
 router.get('/reviews/:id', getReviewByIdForAdmin);
 router.put('/reviews/:id', validate(updateReviewSchema), updateReviewForAdmin);
